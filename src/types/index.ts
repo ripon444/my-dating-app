@@ -52,10 +52,26 @@ export interface ProfilePhoto {
   order: number;
 }
 
+export interface SocialLinks {
+  facebook?: string;
+  instagram?: string;
+  twitter?: string;
+  tiktok?: string;
+  youtube?: string;
+  linkedin?: string;
+  whatsapp?: string;
+  telegram?: string;
+  github?: string;
+  website?: string;
+}
+
 export interface Profile {
   id: string;
   source_type: SourceType;
   user_id?: string;
+  username?: string;
+  social_links?: SocialLinks;
+  website?: string;
   
   // External Provider attributes (Mandatory for external)
   provider_id?: string;

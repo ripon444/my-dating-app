@@ -39,6 +39,9 @@ export const profiles = pgTable('profiles', {
   approxDistanceKm: real('approx_distance_km').default(15),
   bio: text('bio').default(''),
   coverPhoto: text('cover_photo').default(''),
+  username: text('username'),
+  socialLinksJson: text('social_links_json').default('{}'),
+  website: text('website').default(''),
   photosJson: text('photos_json').default('[]'),
   interestsJson: text('interests_json').default('[]'),
   languagesJson: text('languages_json').default('[]'),
@@ -64,6 +67,7 @@ export const profiles = pgTable('profiles', {
   updatedAt: text('updated_at'),
 }, (table) => [
   index('idx_profiles_user_id').on(table.userId),
+  index('idx_profiles_username').on(table.username),
   index('idx_profiles_name').on(table.name),
   index('idx_profiles_city').on(table.city),
 ]);

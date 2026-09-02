@@ -47,6 +47,9 @@ export async function initializePostgresTables() {
         approx_distance_km REAL DEFAULT 15,
         bio TEXT DEFAULT '',
         cover_photo TEXT DEFAULT '',
+        username TEXT,
+        social_links_json TEXT DEFAULT '{}',
+        website TEXT DEFAULT '',
         photos_json TEXT DEFAULT '[]',
         interests_json TEXT DEFAULT '[]',
         languages_json TEXT DEFAULT '[]',
@@ -175,6 +178,13 @@ export async function initializePostgresTables() {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+
+      -- Safe Alter statements for upgrades
+      ALTER TABLE profiles ADD COLUMN IF NOT EXISTS username TEXT;
+      ALTER TABLE profiles ADD COLUMN IF NOT EXISTS social_links_json TEXT DEFAULT '{}';
+      ALTER TABLE profiles ADD COLUMN IF NOT EXISTS website TEXT DEFAULT '';
+      ALTER TABLE profiles ADD COLUMN IF NOT EXISTS cover_photo TEXT DEFAULT '';
+      CREATE INDEX IF NOT EXISTS idx_profiles_username ON profiles(username);
     `);
 
     console.log('[Postgres Init] All tables are ready in PostgreSQL database.');
