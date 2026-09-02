@@ -662,7 +662,7 @@ export const ProfileEditModal: React.FC<ProfileEditModalProps> = ({
                   city={formData.city || ''}
                   country={formData.country || ''}
                   region={formData.region || ''}
-                  label="Current City & Country (বর্তমান শহর ও দেশ)"
+                  label="Current City & Country"
                   placeholder="Type city or division (e.g. Gazipur, Dhaka, Bangladesh / New York, USA)"
                   onChange={({ city, country, region }) => {
                     setFormData((prev) => ({
