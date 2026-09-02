@@ -7,10 +7,13 @@ import {
   RotateCcw,
   Check,
   Globe,
-  Heart
+  Heart,
+  MapPin,
+  ChevronDown
 } from 'lucide-react';
 import { DiscoveryFilters, Gender } from '../types';
 import { useTranslation } from '../i18n/LanguageContext';
+import { WORLD_COUNTRIES, getStatesForCountry, getCitiesForState } from '../data/worldLocations';
 
 interface FiltersModalProps {
   isOpen: boolean;
@@ -191,21 +194,68 @@ export const FiltersModal: React.FC<FiltersModalProps> = ({
             </div>
           </div>
 
-          {/* Country Selection */}
-          <div className="space-y-2">
-            <label className="font-semibold text-stone-200 uppercase tracking-wider text-[11px] text-stone-400">
-              {t('country')}
-            </label>
-            <select
-              value={localFilters.country}
-              onChange={(e) => setLocalFilters({ ...localFilters, country: e.target.value })}
-              className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 focus:outline-none focus:border-rose-500"
-            >
-              <option value="">All Countries (Global)</option>
-              {popularCountries.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
+          {/* Worldwide Country Selection */}
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="font-semibold text-stone-200 uppercase tracking-wider text-[11px] text-stone-400 flex items-center gap-1.5">
+                <Globe className="w-3.5 h-3.5 text-rose-500" />
+                {t('country')}
+              </label>
+              <div className="relative">
+                <select
+                  value={localFilters.country}
+                  onChange={(e) => setLocalFilters({ ...localFilters, country: e.target.value, city: '' })}
+                  className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 focus:outline-none focus:border-rose-500 appearance-none cursor-pointer pr-8 text-xs sm:text-sm"
+                >
+                  <option value="">🌍 All Countries (Global Matches)</option>
+                  {WORLD_COUNTRIES.map((c) => (
+                    <option key={c.name} value={c.name}>
+                      {c.flag} {c.name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="w-4 h-4 text-stone-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
+            </div>
+
+            {/* City or Region filter when country selected */}
+            {localFilters.country && (
+              <div className="space-y-2 animate-in fade-in">
+                <label className="font-semibold text-stone-200 uppercase tracking-wider text-[11px] text-stone-400 flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-rose-500" />
+                  City / State (Optional)
+                </label>
+                
+                {/* Pre-populated cities dropdown if available */}
+                {getStatesForCountry(localFilters.country).length > 0 && (
+                  <div className="relative">
+                    <select
+                      value={localFilters.city || ''}
+                      onChange={(e) => setLocalFilters({ ...localFilters, city: e.target.value })}
+                      className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 focus:outline-none focus:border-rose-500 appearance-none cursor-pointer pr-8 text-xs sm:text-sm"
+                    >
+                      <option value="">-- All Cities in {localFilters.country} --</option>
+                      {getStatesForCountry(localFilters.country).flatMap(stateName => 
+                        getCitiesForState(localFilters.country, stateName).map(cityName => (
+                          <option key={`${stateName}-${cityName}`} value={cityName}>
+                            {cityName} ({stateName})
+                          </option>
+                        ))
+                      )}
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-stone-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
+                )}
+
+                <input
+                  type="text"
+                  value={localFilters.city || ''}
+                  onChange={(e) => setLocalFilters({ ...localFilters, city: e.target.value })}
+                  placeholder="Or type custom city (e.g. Gazipur, Dhaka, Tongi...)"
+                  className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 focus:outline-none focus:border-rose-500 text-xs sm:text-sm placeholder-stone-500"
+                />
+              </div>
+            )}
           </div>
 
           {/* Online Only Toggle */}

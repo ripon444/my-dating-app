@@ -275,7 +275,7 @@ export const DiscoveryCard: React.FC<DiscoveryCardProps> = ({
 
             <div className="flex items-center gap-1 font-medium">
               <MapPin className="w-3.5 h-3.5 text-rose-400" />
-              <span>{profile.city}, {profile.country}</span>
+              <span>{profile.city ? `${profile.city}, ` : ''}{profile.country}</span>
               {profile.approx_distance_km !== undefined && (
                 <span className="text-stone-400">({profile.approx_distance_km} km)</span>
               )}

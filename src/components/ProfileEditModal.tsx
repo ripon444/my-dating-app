@@ -23,6 +23,7 @@ import {
 import { Profile } from '../types';
 import { api } from '../services/api';
 import { AiBioModal } from './AiBioModal';
+import { LocationSelector } from './LocationSelector';
 import { useTranslation } from '../i18n/LanguageContext';
 
 interface ProfileEditModalProps {
@@ -361,150 +362,95 @@ export const ProfileEditModal: React.FC<ProfileEditModalProps> = ({
             )}
 
             {/* 1. COVER PHOTO BANNER MANAGER */}
-            <div className="space-y-3 bg-stone-950/60 p-4 rounded-2xl border border-stone-800">
+            <div className="space-y-3 bg-stone-950/70 p-4 rounded-2xl border border-stone-800">
               <div className="flex items-center justify-between">
                 <label className="font-bold text-stone-200 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                  <Camera className="w-3.5 h-3.5 text-rose-400" />
-                  COVER PHOTO BANNER
+                  <Camera className="w-4 h-4 text-rose-400" />
+                  COVER PHOTO BANNER (ফেসবুক-স্টাইল কভার ফটো)
                 </label>
-                <span className="text-[10px] text-stone-400">Facebook-style header banner</span>
+                <span className="text-[10px] text-rose-400 font-medium">Device Upload & Gallery</span>
               </div>
 
-              {/* Cover Preview Area */}
-              <div className="relative h-28 sm:h-36 w-full rounded-2xl overflow-hidden bg-stone-800 border border-stone-700 group">
+              {/* Cover Preview & Direct Upload Area */}
+              <div 
+                onClick={() => coverFileInputRef.current?.click()}
+                className="relative h-32 sm:h-40 w-full rounded-2xl overflow-hidden bg-stone-800 border-2 border-dashed border-stone-700 hover:border-rose-500 cursor-pointer group transition-all"
+              >
                 {formData.cover_photo ? (
-                  <img
-                    src={formData.cover_photo}
-                    alt="Cover banner"
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = PRESET_COVERS[0];
-                    }}
-                  />
+                  <>
+                    <img
+                      src={formData.cover_photo}
+                      alt="Cover banner"
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = PRESET_COVERS[0];
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-black/40 group-hover:bg-black/60 transition flex flex-col items-center justify-center gap-1.5 opacity-90 group-hover:opacity-100">
+                      <div className="px-3.5 py-1.5 rounded-xl bg-rose-600/90 text-white font-bold text-xs flex items-center gap-2 shadow-lg backdrop-blur-sm">
+                        {isUploadingCover ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}
+                        <span>{isUploadingCover ? 'Processing Image...' : 'Click to Change Cover Photo'}</span>
+                      </div>
+                      <span className="text-[10px] text-stone-300 bg-black/60 px-2 py-0.5 rounded-md">From Computer / Mobile Gallery</span>
+                    </div>
+                  </>
                 ) : (
-                  <div className="w-full h-full bg-gradient-to-r from-rose-950/40 via-stone-900 to-pink-950/40 flex flex-col items-center justify-center text-stone-400 gap-1">
-                    <Camera className="w-6 h-6 text-stone-500" />
-                    <span className="text-xs">No custom cover banner set</span>
+                  <div className="w-full h-full bg-gradient-to-r from-rose-950/40 via-stone-900 to-pink-950/40 flex flex-col items-center justify-center text-stone-300 gap-2 p-4 text-center">
+                    <div className="w-12 h-12 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center group-hover:scale-110 transition">
+                      <Upload className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-white">Click to Upload Cover Photo from Device</p>
+                      <p className="text-[11px] text-stone-400">Select any image (JPG, PNG, WebP) from Computer or Phone Gallery</p>
+                    </div>
                   </div>
                 )}
-
-                {/* Quick overlay button */}
-                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => coverFileInputRef.current?.click()}
-                    disabled={isUploadingCover}
-                    className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1.5 shadow cursor-pointer transition"
-                  >
-                    {isUploadingCover ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                    <span>Upload New Cover</span>
-                  </button>
-                  {formData.cover_photo && (
-                    <button
-                      type="button"
-                      onClick={() => setFormData(prev => ({ ...prev, cover_photo: '' }))}
-                      className="px-3 py-1.5 rounded-xl bg-stone-800/90 hover:bg-red-600 text-stone-300 hover:text-white font-semibold text-xs flex items-center gap-1.5 transition"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Remove</span>
-                    </button>
-                  )}
-                </div>
               </div>
 
-              {/* Cover Options Tabs */}
-              <div className="space-y-2 pt-1">
-                <div className="flex items-center gap-2 border-b border-stone-800 pb-2">
+              {/* Action Bar for Cover Photo */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => coverFileInputRef.current?.click()}
+                  disabled={isUploadingCover}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-bold text-xs flex items-center gap-2 shadow-md shadow-rose-950/40 transition cursor-pointer"
+                >
+                  {isUploadingCover ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                  <span>📁 Upload Cover from Device / Gallery</span>
+                </button>
+
+                {formData.cover_photo && (
                   <button
                     type="button"
-                    onClick={() => setCoverTab('upload')}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition ${
-                      coverTab === 'upload'
-                        ? 'bg-rose-600 text-white shadow'
-                        : 'text-stone-400 hover:text-stone-200 bg-stone-800/60'
-                    }`}
+                    onClick={() => setFormData(prev => ({ ...prev, cover_photo: '' }))}
+                    className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-red-600 text-stone-300 hover:text-white font-medium text-xs flex items-center gap-1.5 transition cursor-pointer"
                   >
-                    <Upload className="w-3 h-3" /> Upload File
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Remove Cover</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setCoverTab('presets')}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition ${
-                      coverTab === 'presets'
-                        ? 'bg-rose-600 text-white shadow'
-                        : 'text-stone-400 hover:text-stone-200 bg-stone-800/60'
-                    }`}
-                  >
-                    <Star className="w-3 h-3" /> Preset Banners
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCoverTab('url')}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition ${
-                      coverTab === 'url'
-                        ? 'bg-rose-600 text-white shadow'
-                        : 'text-stone-400 hover:text-stone-200 bg-stone-800/60'
-                    }`}
-                  >
-                    <Globe className="w-3 h-3" /> Banner URL
-                  </button>
+                )}
+              </div>
+
+              {/* Preset Covers Carousel */}
+              <div className="space-y-1.5 pt-2 border-t border-stone-800/80">
+                <div className="text-[11px] font-semibold text-stone-400 flex items-center gap-1">
+                  <Star className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Or choose a stylish preset theme banner:</span>
                 </div>
-
-                {coverTab === 'upload' && (
-                  <div
-                    onClick={() => coverFileInputRef.current?.click()}
-                    className="p-3.5 rounded-xl border-2 border-dashed border-stone-700 hover:border-rose-400 bg-stone-900/80 text-stone-300 text-center cursor-pointer transition flex items-center justify-center gap-3"
-                  >
-                    <div className="w-8 h-8 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
-                      <Upload className="w-4 h-4" />
-                    </div>
-                    <div className="text-left">
-                      <p className="text-xs font-bold text-white">Click to select cover image from Computer or Mobile Gallery</p>
-                      <p className="text-[11px] text-stone-400">JPG, PNG, WebP banner image</p>
-                    </div>
-                  </div>
-                )}
-
-                {coverTab === 'presets' && (
-                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                    {PRESET_COVERS.map((presetUrl, idx) => (
-                      <div
-                        key={idx}
-                        onClick={() => setFormData(prev => ({ ...prev, cover_photo: presetUrl }))}
-                        className={`h-14 rounded-xl overflow-hidden border-2 cursor-pointer transition hover:scale-105 ${
-                          formData.cover_photo === presetUrl ? 'border-rose-500 ring-2 ring-rose-500/40' : 'border-stone-700 hover:border-stone-500'
-                        }`}
-                      >
-                        <img src={presetUrl} alt="Preset cover" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {coverTab === 'url' && (
-                  <div className="flex gap-2">
-                    <input
-                      type="url"
-                      value={coverUrlInput}
-                      onChange={(e) => setCoverUrlInput(e.target.value)}
-                      placeholder="Paste cover banner image URL (e.g. https://...)"
-                      className="flex-1 bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 text-xs focus:outline-none focus:border-rose-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (coverUrlInput.trim()) {
-                          setFormData(prev => ({ ...prev, cover_photo: coverUrlInput.trim() }));
-                          setCoverUrlInput('');
-                        }
-                      }}
-                      className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-rose-400 border border-stone-700 text-xs font-bold flex items-center gap-1 transition"
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                  {PRESET_COVERS.map((presetUrl, idx) => (
+                    <div
+                      key={idx}
+                      onClick={() => setFormData(prev => ({ ...prev, cover_photo: presetUrl }))}
+                      className={`h-12 rounded-xl overflow-hidden border-2 cursor-pointer transition hover:scale-105 ${
+                        formData.cover_photo === presetUrl ? 'border-rose-500 ring-2 ring-rose-500/40' : 'border-stone-700 hover:border-stone-500'
+                      }`}
                     >
-                      <Check className="w-4 h-4" /> Apply
-                    </button>
-                  </div>
-                )}
+                      <img src={presetUrl} alt="Preset cover" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -683,50 +629,49 @@ export const ProfileEditModal: React.FC<ProfileEditModalProps> = ({
             </div>
 
             {/* 3. BASIC PROFILE INFO */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-stone-300 flex items-center gap-1">
-                  Full Display Name <span className="text-rose-400 font-bold">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formData.name || ''}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="Enter your full name"
-                  className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 text-xs focus:outline-none focus:border-rose-500"
-                />
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold text-stone-300 flex items-center gap-1">
+                    Full Display Name <span className="text-rose-400 font-bold">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.name || ''}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    placeholder="Enter your full name"
+                    className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 text-xs focus:outline-none focus:border-rose-500"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold text-stone-300">Date of Birth (18+)</label>
+                  <input
+                    type="date"
+                    value={formData.date_of_birth || '1998-01-01'}
+                    onChange={(e) => setFormData({ ...formData, date_of_birth: e.target.value })}
+                    className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 text-xs focus:outline-none focus:border-rose-500"
+                  />
+                </div>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-stone-300">Date of Birth (18+)</label>
-                <input
-                  type="date"
-                  value={formData.date_of_birth || '1998-01-01'}
-                  onChange={(e) => setFormData({ ...formData, date_of_birth: e.target.value })}
-                  className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 text-xs focus:outline-none focus:border-rose-500"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-stone-300">City</label>
-                <input
-                  type="text"
-                  value={formData.city || ''}
-                  onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                  placeholder="e.g. Dhaka, New York, Tokyo"
-                  className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 text-xs focus:outline-none focus:border-rose-500"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-stone-300">Country</label>
-                <input
-                  type="text"
-                  value={formData.country || ''}
-                  onChange={(e) => setFormData({ ...formData, country: e.target.value })}
-                  placeholder="e.g. Bangladesh, United States, Japan"
-                  className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 text-xs focus:outline-none focus:border-rose-500"
+              {/* Facebook-style Worldwide Location Autocomplete & Dropdowns */}
+              <div className="p-3.5 bg-stone-950/60 rounded-2xl border border-stone-800">
+                <LocationSelector
+                  city={formData.city || ''}
+                  country={formData.country || ''}
+                  region={formData.region || ''}
+                  label="Current City & Country (বর্তমান শহর ও দেশ)"
+                  placeholder="Type city or division (e.g. Gazipur, Dhaka, Bangladesh / New York, USA)"
+                  onChange={({ city, country, region }) => {
+                    setFormData((prev) => ({
+                      ...prev,
+                      city,
+                      country,
+                      region,
+                    }));
+                  }}
                 />
               </div>
             </div>

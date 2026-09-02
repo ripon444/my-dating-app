@@ -570,10 +570,10 @@ export const PublicProfileView: React.FC<PublicProfileViewProps> = ({
 
                 {/* City & Country / Profession */}
                 <div className="flex items-center justify-center md:justify-start gap-3 text-xs md:text-sm text-neutral-400 flex-wrap">
-                  {profile.city && (
+                  {(profile.city || profile.country) && (
                     <span className="flex items-center gap-1">
                       <MapPin className="w-3.5 h-3.5 text-rose-400" />
-                      {profile.city}, {profile.country}
+                      {profile.city ? `${profile.city}, ` : ''}{profile.region ? `${profile.region}, ` : ''}{profile.country}
                     </span>
                   )}
                   {profile.profession && (
@@ -835,13 +835,13 @@ export const PublicProfileView: React.FC<PublicProfileViewProps> = ({
                     </div>
                   )}
 
-                  {profile.city && (
+                  {(profile.city || profile.country) && (
                     <div className="flex items-start gap-3">
                       <MapPin className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                       <div>
                         <div className="text-neutral-500 font-medium">Location</div>
                         <div className="font-semibold text-white">
-                          {profile.city}, {profile.country}
+                          {profile.city ? `${profile.city}, ` : ''}{profile.region ? `${profile.region}, ` : ''}{profile.country}
                         </div>
                       </div>
                     </div>
