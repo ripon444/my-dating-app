@@ -1,0 +1,398 @@
+// Prisma Schema for Global Dating Platform
+// Database: PostgreSQL with Prisma ORM
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  USER
+  MODERATOR
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  NON_BINARY
+  OTHER
+}
+
+enum SourceType {
+  NATIVE
+  EXTERNAL
+}
+
+enum MatchStatus {
+  ACTIVE
+  UNMATCHED
+  BLOCKED
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  AUDIO
+  SYSTEM
+}
+
+enum CallType {
+  VOICE
+  VIDEO
+}
+
+enum CallStatus {
+  RINGING
+  ACCEPTED
+  REJECTED
+  MISSED
+  ENDED
+}
+
+enum SubscriptionTier {
+  FREE
+  PREMIUM
+  VIP
+}
+
+enum ReportCategory {
+  SPAM
+  SCAM
+  HARASSMENT
+  FAKE_PROFILE
+  IMPERSONATION
+  INAPPROPRIATE_CONTENT
+  UNDERAGE_USER
+  OTHER
+}
+
+enum ReportStatus {
+  PENDING
+  REVIEWED
+  ACTION_TAKEN
+  DISMISSED
+}
+
+enum ProviderStatus {
+  ACTIVE
+  INACTIVE
+  ERROR
+}
+
+model User {
+  id                String            @id @default(uuid())
+  email             String            @unique
+  passwordHash      String
+  role              Role              @default(USER)
+  isEmailVerified   Boolean           @default(false)
+  isAgeVerified     Boolean           @default(false)
+  isBanned          Boolean           @default(false)
+  subscriptionTier  SubscriptionTier  @default(FREE)
+  subscriptionExpiresAt DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  profile           Profile?
+  preferences       Preferences?
+  sentLikes         Like[]            @relation("SentLikes")
+  receivedLikes     Like[]            @relation("ReceivedLikes")
+  sentMessages      Message[]         @relation("SentMessages")
+  receivedMessages  Message[]         @relation("ReceivedMessages")
+  initiatedCalls    Call[]            @relation("InitiatedCalls")
+  receivedCalls     Call[]            @relation("ReceivedCalls")
+  notifications     Notification[]
+  blocksMade        Block[]           @relation("UserBlocks")
+  blockedBy         Block[]           @relation("BlockedUser")
+  reportsFiled      Report[]          @relation("Reporter")
+  reportsAgainst    Report[]          @relation("ReportedUser")
+  subscriptions     Subscription[]
+  payments          Payment[]
+  boosts            Boost[]
+
+  @@index([email])
+  @@index([role])
+}
+
+model Profile {
+  id                  String       @id @default(uuid())
+  sourceType          SourceType   @default(NATIVE)
+  userId              String?      @unique
+  user                User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // External Provider mapping
+  providerId          String?
+  provider            ExternalProvider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  externalProfileId   String?
+  externalProfileUrl  String?
+  lastSyncedAt        DateTime?
+
+  // Profile data
+  name                String
+  dateOfBirth         DateTime
+  age                 Int
+  gender              Gender
+  country             String
+  region              String?
+  city                String
+  approxLat           Float?
+  approxLng           Float?
+  bio                 String       @db.Text
+  interests           String[]
+  languages           String[]
+  relationshipGoal    String
+  education           String?
+  profession          String?
+  height              Int?         // in cm
+  smoking             String?
+  drinking            String?
+  children            String?
+  
+  // Stats & States
+  compatibilityScore  Int          @default(85)
+  isOnline            Boolean      @default(false)
+  lastActiveAt        DateTime     @default(now())
+  isVerified          Boolean      @default(false)
+  isBoosted           Boolean      @default(false)
+  boostExpiresAt      DateTime?
+
+  // Privacy controls
+  isVisible           Boolean      @default(true)
+  showAge             Boolean      @default(true)
+  showApproxLocation  Boolean      @default(true)
+  allowCalls          Boolean      @default(true)
+  allowMessages       Boolean      @default(true)
+
+  photos              ProfilePhoto[]
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  @@index([sourceType])
+  @@index([country, city])
+  @@index([gender])
+  @@index([age])
+}
+
+model ProfilePhoto {
+  id          String   @id @default(uuid())
+  profileId   String
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  url         String
+  thumbnailUrl String?
+  isPrimary   Boolean  @default(false)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  @@index([profileId])
+}
+
+model Preferences {
+  id                String   @id @default(uuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  minAge            Int      @default(18)
+  maxAge            Int      @default(65)
+  interestedIn      Gender[]
+  targetCountries   String[]
+  maxDistanceKm     Int      @default(100)
+  languages         String[]
+  relationshipGoals String[]
+  sourceFilter      String   @default("ALL") // ALL, NATIVE, PARTNER
+  updatedAt         DateTime @updatedAt
+}
+
+model Like {
+  id          String   @id @default(uuid())
+  senderId    String
+  sender      User     @relation("SentLikes", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId  String
+  receiver    User     @relation("ReceivedLikes", fields: [receiverId], references: [id], onDelete: Cascade)
+  isSuperLike Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@unique([senderId, receiverId])
+  @@index([senderId])
+  @@index([receiverId])
+}
+
+model Match {
+  id          String      @id @default(uuid())
+  userAId     String
+  userBId     String
+  status      MatchStatus @default(ACTIVE)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  conversation Conversation?
+
+  @@unique([userAId, userBId])
+  @@index([userAId])
+  @@index([userBId])
+}
+
+model Conversation {
+  id          String    @id @default(uuid())
+  matchId     String?   @unique
+  match       Match?    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  userAId     String
+  userBId     String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  messages    Message[]
+
+  @@index([userAId, userBId])
+}
+
+model Message {
+  id              String       @id @default(uuid())
+  conversationId  String
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId        String
+  sender          User         @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId      String
+  receiver        User         @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  messageType     MessageType  @default(TEXT)
+  content         String       @db.Text
+  attachmentUrl   String?
+  translatedText  String?      @db.Text
+  translatedLang  String?
+  readAt          DateTime?
+  deletedAt       DateTime?
+  createdAt       DateTime     @default(now())
+
+  @@index([conversationId])
+  @@index([senderId, receiverId])
+}
+
+model Call {
+  id          String     @id @default(uuid())
+  callerId    String
+  caller      User       @relation("InitiatedCalls", fields: [callerId], references: [id], onDelete: Cascade)
+  receiverId  String
+  receiver    User       @relation("ReceivedCalls", fields: [receiverId], references: [id], onDelete: Cascade)
+  type        CallType   @default(VIDEO)
+  status      CallStatus @default(RINGING)
+  startedAt   DateTime?
+  endedAt     DateTime?
+  duration    Int        @default(0) // seconds
+  createdAt   DateTime   @default(now())
+
+  @@index([callerId, receiverId])
+}
+
+model Notification {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        String   // LIKE, MATCH, MESSAGE, CALL, SYSTEM, BOOST
+  title       String
+  message     String
+  data        Json?
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Block {
+  id          String   @id @default(uuid())
+  blockerId   String
+  blocker     User     @relation("UserBlocks", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedId   String
+  blocked     User     @relation("BlockedUser", fields: [blockedId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+}
+
+model Report {
+  id            String         @id @default(uuid())
+  reporterId    String
+  reporter      User           @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  reportedUserId String
+  reportedUser  User           @relation("ReportedUser", fields: [reportedUserId], references: [id], onDelete: Cascade)
+  category      ReportCategory
+  reason        String         @db.Text
+  status        ReportStatus   @default(PENDING)
+  notes         String?        @db.Text
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([reportedUserId])
+  @@index([status])
+}
+
+model Subscription {
+  id              String           @id @default(uuid())
+  userId          String
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tier            SubscriptionTier
+  stripeSubId     String?
+  stripeCustomerId String?
+  status          String           // active, trialing, canceled
+  currentPeriodEnd DateTime
+  createdAt       DateTime         @default(now())
+}
+
+model Payment {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amountCents     Int
+  currency        String   @default("USD")
+  stripePaymentId String?
+  itemDescription String
+  status          String   // succeeded, pending, failed
+  createdAt       DateTime @default(now())
+}
+
+model Boost {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  durationMinutes Int
+  startedAt   DateTime  @default(now())
+  expiresAt   DateTime
+  status      String    @default("ACTIVE") // ACTIVE, EXPIRED
+  createdAt   DateTime  @default(now())
+}
+
+model ExternalProvider {
+  id                     String         @id @default(uuid())
+  name                   String         @unique
+  baseUrl                String
+  apiKeyEncrypted        String?
+  clientId               String?
+  clientSecretEncrypted  String?
+  status                 ProviderStatus @default(ACTIVE)
+  syncIntervalHours      Int            @default(6)
+  termsUrl               String
+  privacyUrl             String
+  attributionRequirement String
+  lastSyncedAt           DateTime?
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+
+  profiles               Profile[]
+  syncLogs               ExternalSyncLog[]
+}
+
+model ExternalSyncLog {
+  id                String           @id @default(uuid())
+  providerId        String
+  provider          ExternalProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  startedAt         DateTime         @default(now())
+  completedAt       DateTime?
+  profilesFetched   Int              @default(0)
+  profilesUpdated   Int              @default(0)
+  profilesRemoved   Int              @default(0)
+  errorCount        Int              @default(0)
+  status            String           @default("SUCCESS")
+  errorMessage      String?          @db.Text
+}

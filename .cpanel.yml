@@ -1,0 +1,6 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=$(pwd)
+    - /bin/echo "Updating repository files..."
+    - /bin/cp -R * $DEPLOYPATH
