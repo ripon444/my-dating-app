@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   UserCheck,
@@ -29,6 +29,9 @@ import {
   Copy,
   Flame,
   Info,
+  Upload,
+  Star,
+  Globe,
 } from 'lucide-react';
 import { Profile, User } from '../types';
 import { api } from '../services/api';
@@ -115,8 +118,10 @@ export const PublicProfileView: React.FC<PublicProfileViewProps> = ({
 
   // Cover photo edit modal for owner
   const [showCoverEditModal, setShowCoverEditModal] = useState(false);
+  const [coverModalTab, setCoverModalTab] = useState<'upload' | 'presets' | 'url'>('upload');
   const [customCoverUrl, setCustomCoverUrl] = useState('');
   const [savingCover, setSavingCover] = useState(false);
+  const coverFileRef = useRef<HTMLInputElement>(null);
 
   const isOwnProfile = isSelf;
 
@@ -264,6 +269,63 @@ export const PublicProfileView: React.FC<PublicProfileViewProps> = ({
       showToast('Profile link copied to clipboard! 📋');
     });
     setMenuOpen(false);
+  };
+
+  const processCoverImageFile = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      if (!file.type.startsWith('image/')) {
+        reject(new Error('Selected file is not an image'));
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          const maxDim = 1400;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', 0.85));
+          } else {
+            resolve(e.target?.result as string);
+          }
+        };
+        img.onerror = () => resolve(e.target?.result as string);
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = (err) => reject(err);
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleCoverFileUpload = async (file: File) => {
+    if (!file || !file.type.startsWith('image/')) return;
+    setSavingCover(true);
+    try {
+      const dataUrl = await processCoverImageFile(file);
+      const res = await api.updateProfile({ cover_photo: dataUrl });
+      setProfile(res.profile);
+      setShowCoverEditModal(false);
+      showToast('Cover photo uploaded & updated successfully!');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to upload cover photo');
+    } finally {
+      setSavingCover(false);
+    }
   };
 
   const handleSaveCoverPhoto = async () => {
@@ -1104,73 +1166,155 @@ export const PublicProfileView: React.FC<PublicProfileViewProps> = ({
       {/* Edit Cover Photo Modal (Owner) */}
       <AnimatePresence>
         {showCoverEditModal && (
-          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <input
+              type="file"
+              ref={coverFileRef}
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files && e.target.files[0]) {
+                  handleCoverFileUpload(e.target.files[0]);
+                }
+                e.target.value = '';
+              }}
+            />
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl"
+              className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 max-w-lg w-full space-y-4 shadow-2xl"
             >
               <div className="flex items-center justify-between">
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <Camera className="w-4 h-4 text-rose-500" />
-                  Change Cover Photo
+                <h3 className="text-base font-bold text-white flex items-center gap-2 font-serif">
+                  <Camera className="w-5 h-5 text-rose-500" />
+                  Change Cover Banner
                 </h3>
                 <button
                   onClick={() => setShowCoverEditModal(false)}
-                  className="text-neutral-400 hover:text-white"
+                  className="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-neutral-800 transition"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <p className="text-xs text-neutral-400">
-                Enter an image URL for your Facebook-style cover banner photo:
-              </p>
-
-              <input
-                type="url"
-                placeholder="https://images.unsplash.com/..."
-                value={customCoverUrl}
-                onChange={(e) => setCustomCoverUrl(e.target.value)}
-                className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-rose-500"
-              />
-
-              {/* Quick Presets */}
-              <div className="space-y-1.5">
-                <div className="text-[11px] font-semibold text-neutral-400">Or choose a preset theme:</div>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&w=1200&q=80',
-                    'https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&w=1200&q=80',
-                    'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80',
-                  ].map((url, i) => (
-                    <img
-                      key={i}
-                      src={url}
-                      alt="Preset"
-                      onClick={() => setCustomCoverUrl(url)}
-                      referrerPolicy="no-referrer"
-                      className="h-14 w-full object-cover rounded-lg border border-neutral-700 cursor-pointer hover:border-rose-500 transition-colors"
-                    />
-                  ))}
-                </div>
+              {/* Cover Modal Tabs */}
+              <div className="flex items-center gap-2 border-b border-neutral-800 pb-2">
+                <button
+                  type="button"
+                  onClick={() => setCoverModalTab('upload')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
+                    coverModalTab === 'upload'
+                      ? 'bg-rose-600 text-white shadow'
+                      : 'text-neutral-400 hover:text-neutral-200 bg-neutral-800/60'
+                  }`}
+                >
+                  <Upload className="w-3.5 h-3.5" /> Upload Image File
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCoverModalTab('presets')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
+                    coverModalTab === 'presets'
+                      ? 'bg-rose-600 text-white shadow'
+                      : 'text-neutral-400 hover:text-neutral-200 bg-neutral-800/60'
+                  }`}
+                >
+                  <Star className="w-3.5 h-3.5" /> Preset Themes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCoverModalTab('url')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
+                    coverModalTab === 'url'
+                      ? 'bg-rose-600 text-white shadow'
+                      : 'text-neutral-400 hover:text-neutral-200 bg-neutral-800/60'
+                  }`}
+                >
+                  <Globe className="w-3.5 h-3.5" /> Image URL
+                </button>
               </div>
+
+              {/* Upload File Tab */}
+              {coverModalTab === 'upload' && (
+                <div
+                  onClick={() => coverFileRef.current?.click()}
+                  className="p-6 rounded-2xl border-2 border-dashed border-neutral-700 hover:border-rose-500 bg-neutral-950/60 text-center cursor-pointer transition flex flex-col items-center justify-center gap-2.5 group"
+                >
+                  <div className="w-12 h-12 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center group-hover:scale-110 transition">
+                    <Upload className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-white">Click to select banner from Device / Gallery</p>
+                    <p className="text-xs text-neutral-400">Supports JPG, PNG, WebP (Landscape recommended)</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Presets Tab */}
+              {coverModalTab === 'presets' && (
+                <div className="space-y-2">
+                  <div className="text-xs text-neutral-400">Click a preset banner to select:</div>
+                  <div className="grid grid-cols-3 gap-2.5">
+                    {[
+                      'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&w=1200&q=80',
+                      'https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&w=1200&q=80',
+                      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80',
+                      'https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=1200&q=80',
+                      'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1200&q=80',
+                      'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1200&q=80',
+                    ].map((url, i) => (
+                      <div
+                        key={i}
+                        onClick={() => setCustomCoverUrl(url)}
+                        className={`h-16 rounded-xl overflow-hidden border-2 cursor-pointer transition hover:scale-105 ${
+                          customCoverUrl === url ? 'border-rose-500 ring-2 ring-rose-500/40' : 'border-neutral-700 hover:border-neutral-500'
+                        }`}
+                      >
+                        <img
+                          src={url}
+                          alt="Preset"
+                          referrerPolicy="no-referrer"
+                          className="h-full w-full object-cover"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* URL Tab */}
+              {coverModalTab === 'url' && (
+                <div className="space-y-2">
+                  <p className="text-xs text-neutral-400">
+                    Paste image URL for your cover banner:
+                  </p>
+                  <input
+                    type="url"
+                    placeholder="https://images.unsplash.com/..."
+                    value={customCoverUrl}
+                    onChange={(e) => setCustomCoverUrl(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-neutral-950 border border-neutral-800 rounded-xl text-xs sm:text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-rose-500"
+                  />
+                </div>
+              )}
 
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={() => setShowCoverEditModal(false)}
-                  className="flex-1 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-semibold rounded-xl text-xs transition-colors"
+                  className="flex-1 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-semibold rounded-xl text-xs transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
-                <button
-                  disabled={savingCover || !customCoverUrl.trim()}
-                  onClick={handleSaveCoverPhoto}
-                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs transition-colors disabled:opacity-50"
-                >
-                  {savingCover ? 'Saving...' : 'Save Cover Photo'}
-                </button>
+                {coverModalTab !== 'upload' && (
+                  <button
+                    disabled={savingCover || !customCoverUrl.trim()}
+                    onClick={handleSaveCoverPhoto}
+                    className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    {savingCover ? 'Saving...' : 'Apply Cover'}
+                  </button>
+                )}
               </div>
             </motion.div>
           </div>

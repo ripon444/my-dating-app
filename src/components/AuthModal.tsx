@@ -81,8 +81,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setSuccessMessage('');
 
     // Validations
-    if (!name.trim()) {
-      setError('Please enter your full name.');
+    if (!name || !name.trim()) {
+      setError('Full Name is mandatory. Please enter your name to register.');
+      return;
+    }
+    if (name.trim().length < 2) {
+      setError('Name must be at least 2 characters long.');
       return;
     }
     if (!dob) {
@@ -251,7 +255,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           /* ========================================================================= */
           <form onSubmit={handleRegisterSubmit} className="space-y-3 text-xs sm:text-sm">
             <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-stone-300">Full Name</label>
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-semibold text-stone-300">
+                  Full Name <span className="text-rose-400 font-bold">*</span>
+                </label>
+                <span className="text-[10px] text-stone-400 font-medium">Required</span>
+              </div>
               <div className="relative">
                 <UserIcon className="w-4 h-4 text-stone-500 absolute left-3.5 top-3" />
                 <input

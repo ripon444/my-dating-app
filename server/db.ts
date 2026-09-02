@@ -137,6 +137,7 @@ function initTables(db: Database) {
       region TEXT,
       approx_distance_km REAL DEFAULT 15,
       bio TEXT,
+      cover_photo TEXT,
       photos_json TEXT,
       interests_json TEXT,
       languages_json TEXT,
@@ -280,6 +281,19 @@ function initTables(db: Database) {
     CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);
     CREATE INDEX IF NOT EXISTS idx_calls_users ON calls(caller_id, receiver_id);
   `);
+
+  // Run safe schema migrations for existing databases
+  try {
+    db.run('ALTER TABLE profiles ADD COLUMN cover_photo TEXT;');
+  } catch (e) {
+    // Column already exists or table freshly created
+  }
+  try {
+    db.run('ALTER TABLE profiles ADD COLUMN allow_calls INTEGER DEFAULT 1;');
+  } catch (e) {}
+  try {
+    db.run('ALTER TABLE profiles ADD COLUMN allow_messages INTEGER DEFAULT 1;');
+  } catch (e) {}
 
   // Seed default admin account if not existing
   const res = db.exec("SELECT COUNT(*) as count FROM users WHERE email = 'admin@globalmatch.com'");

@@ -719,13 +719,56 @@ app.put('/api/profiles/me', async (req, res) => {
     children,
     city,
     country,
+    date_of_birth,
     allow_calls,
     allow_messages,
   } = req.body;
 
   const now = new Date().toISOString();
 
-  // Update in SQLite
+  // Check if profile exists
+  let existingProfile = await SqlHelper.queryOne('SELECT * FROM profiles WHERE user_id = ? OR id = ?', [user.id, user.id]);
+
+  if (!existingProfile) {
+    // Create new profile row for this user if missing
+    const newProfileId = `prf_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`;
+    const defaultPhoto = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=1000&q=80';
+    await SqlHelper.execute(
+      `INSERT INTO profiles (
+        id, user_id, source_type, name, age, date_of_birth, gender, country, city, region,
+        approx_distance_km, bio, cover_photo, photos_json, interests_json, languages_json, relationship_goal,
+        compatibility_score, is_online, last_active, is_verified, is_boosted, is_visible,
+        show_age, show_approx_location, allow_calls, allow_messages, created_at, updated_at
+      ) VALUES (
+        ?, ?, 'native', ?, 25, '1999-01-01', 'FEMALE', 'Global', 'New York', 'Downtown',
+        15, '', '', ?, '["Travel", "Music"]', '["English"]', 'Long-term relationship',
+        90, 1, ?, 1, 0, 1, 1, 1, 1, 1, ?, ?
+      )`,
+      [
+        newProfileId,
+        user.id,
+        name ? name.trim() : (user.email.split('@')[0] || 'Member'),
+        JSON.stringify(Array.isArray(photos) && photos.length > 0 ? photos : [defaultPhoto]),
+        now,
+        now,
+        now,
+      ]
+    );
+    existingProfile = await SqlHelper.queryOne('SELECT * FROM profiles WHERE user_id = ?', [user.id]);
+  }
+
+  // Calculate age if date_of_birth provided
+  let calculatedAge: number | null = null;
+  if (date_of_birth) {
+    const birthDate = new Date(date_of_birth);
+    if (!isNaN(birthDate.getTime())) {
+      const ageDifMs = Date.now() - birthDate.getTime();
+      const ageDate = new Date(ageDifMs);
+      calculatedAge = Math.abs(ageDate.getUTCFullYear() - 1970);
+    }
+  }
+
+  // Update in SQLite with robust null handling
   await SqlHelper.execute(
     `UPDATE profiles SET
       name = COALESCE(?, name),
@@ -743,29 +786,34 @@ app.put('/api/profiles/me', async (req, res) => {
       children = COALESCE(?, children),
       city = COALESCE(?, city),
       country = COALESCE(?, country),
+      date_of_birth = COALESCE(?, date_of_birth),
+      age = COALESCE(?, age),
       allow_calls = COALESCE(?, allow_calls),
       allow_messages = COALESCE(?, allow_messages),
       updated_at = ?
-     WHERE user_id = ?`,
+     WHERE user_id = ? OR id = ?`,
     [
-      name,
-      bio,
-      cover_photo,
-      photos ? JSON.stringify(photos) : null,
-      interests ? JSON.stringify(interests) : null,
-      languages ? JSON.stringify(languages) : null,
-      relationship_goal,
-      education,
-      profession,
-      height,
-      smoking,
-      drinking,
-      children,
-      city,
-      country,
-      allow_calls !== undefined ? (allow_calls ? 1 : 0) : null,
-      allow_messages !== undefined ? (allow_messages ? 1 : 0) : null,
+      name !== undefined && name !== null ? name.trim() : null,
+      bio !== undefined && bio !== null ? bio : null,
+      cover_photo !== undefined && cover_photo !== null ? cover_photo : null,
+      photos !== undefined && photos !== null ? (Array.isArray(photos) ? JSON.stringify(photos) : photos) : null,
+      interests !== undefined && interests !== null ? (Array.isArray(interests) ? JSON.stringify(interests) : interests) : null,
+      languages !== undefined && languages !== null ? (Array.isArray(languages) ? JSON.stringify(languages) : languages) : null,
+      relationship_goal !== undefined && relationship_goal !== null ? relationship_goal : null,
+      education !== undefined && education !== null ? education : null,
+      profession !== undefined && profession !== null ? profession : null,
+      height !== undefined && height !== null ? height : null,
+      smoking !== undefined && smoking !== null ? smoking : null,
+      drinking !== undefined && drinking !== null ? drinking : null,
+      children !== undefined && children !== null ? children : null,
+      city !== undefined && city !== null ? city : null,
+      country !== undefined && country !== null ? country : null,
+      date_of_birth !== undefined && date_of_birth !== null ? date_of_birth : null,
+      calculatedAge,
+      allow_calls !== undefined && allow_calls !== null ? (allow_calls ? 1 : 0) : null,
+      allow_messages !== undefined && allow_messages !== null ? (allow_messages ? 1 : 0) : null,
       now,
+      user.id,
       user.id,
     ]
   );
@@ -773,7 +821,7 @@ app.put('/api/profiles/me', async (req, res) => {
   // Update in PostgreSQL as well
   try {
     await updatePgProfile(user.id, {
-      name,
+      name: name !== undefined ? name.trim() : undefined,
       bio,
       cover_photo,
       photos,
@@ -789,7 +837,7 @@ app.put('/api/profiles/me', async (req, res) => {
     console.warn('[Postgres Profile Update Note]:', pgErr);
   }
 
-  const updated = await SqlHelper.queryOne('SELECT * FROM profiles WHERE user_id = ?', [user.id]);
+  const updated = await SqlHelper.queryOne('SELECT * FROM profiles WHERE user_id = ? OR id = ?', [user.id, user.id]);
   res.json({ profile: formatProfileRow(updated) });
 });
 
