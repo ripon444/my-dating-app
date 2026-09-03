@@ -61,12 +61,83 @@ function getGenAI(): GoogleGenAI | null {
 // -------------------------------------------------------------
 // SQL Data Helper & Formatting Functions
 // -------------------------------------------------------------
+export function sanitizeSafeUrl(rawUrl?: string): string {
+  if (!rawUrl || typeof rawUrl !== 'string') return '';
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return '';
+
+  const lower = trimmed.toLowerCase();
+  // Strictly prevent dangerous pseudo-protocols
+  if (
+    lower.startsWith('javascript:') ||
+    lower.startsWith('data:') ||
+    lower.startsWith('vbscript:') ||
+    lower.startsWith('file:') ||
+    lower.startsWith('blob:')
+  ) {
+    return '';
+  }
+
+  // Auto-prefix https if missing scheme
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  return trimmed;
+}
+
+export function sanitizeSocialLinks(raw: any): Record<string, string> {
+  if (!raw || typeof raw !== 'object') return {};
+  const cleaned: Record<string, string> = {};
+  const allowedKeys = [
+    'facebook',
+    'instagram',
+    'twitter',
+    'tiktok',
+    'youtube',
+    'linkedin',
+    'telegram',
+    'whatsapp',
+    'github',
+    'website'
+  ];
+
+  for (const key of allowedKeys) {
+    let val = raw[key];
+    if (typeof val === 'string' && val.trim()) {
+      val = val.trim();
+      // Format known platform handles if user just entered username / handle
+      if (!val.startsWith('http://') && !val.startsWith('https://')) {
+        const handle = val.replace(/^@/, '');
+        if (key === 'facebook') val = `https://facebook.com/${handle}`;
+        else if (key === 'instagram') val = `https://instagram.com/${handle}`;
+        else if (key === 'twitter') val = `https://x.com/${handle}`;
+        else if (key === 'tiktok') val = `https://tiktok.com/@${handle}`;
+        else if (key === 'youtube') val = val.startsWith('@') ? `https://youtube.com/${val}` : `https://youtube.com/@${handle}`;
+        else if (key === 'linkedin') val = val.includes('/') ? `https://linkedin.com/${val}` : `https://linkedin.com/in/${handle}`;
+        else if (key === 'telegram') val = `https://t.me/${handle}`;
+        else if (key === 'whatsapp') val = `https://wa.me/${handle.replace(/[^0-9]/g, '')}`;
+        else if (key === 'github') val = `https://github.com/${handle}`;
+        else val = `https://${val}`;
+      }
+
+      const safe = sanitizeSafeUrl(val);
+      if (safe) {
+        cleaned[key] = safe;
+      }
+    }
+  }
+  return cleaned;
+}
+
 export function formatProfileRow(row: any): any {
   if (!row) return null;
   return {
     id: row.id,
     source_type: row.source_type || 'native',
     user_id: row.user_id,
+    username: row.username || (row.name ? row.name.toLowerCase().replace(/[^a-z0-9]/g, '_') : undefined),
+    social_links: typeof row.social_links_json === 'string' ? JSON.parse(row.social_links_json || '{}') : (row.social_links || {}),
+    website: row.website || '',
     provider_id: row.provider_id,
     provider_name: row.provider_name,
     external_profile_id: row.external_profile_id,
@@ -319,17 +390,19 @@ app.post('/api/auth/register', async (req, res) => {
 
     const userCountry = (country || 'United States').trim();
     const userCity = (city || 'New York').trim();
+    const baseUsername = name.trim().toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || 'member';
+    const uniqueUsername = `${baseUsername}_${uniqueHex.slice(0, 4)}`;
 
-    // SQL INSERT INTO profiles table
+    // SQL INSERT INTO profiles table with unique username and social defaults
     await SqlHelper.execute(
       `INSERT INTO profiles (
         id, user_id, source_type, name, age, date_of_birth, gender, country, city, region,
-        approx_distance_km, bio, photos_json, interests_json, languages_json, relationship_goal,
+        approx_distance_km, bio, cover_photo, username, social_links_json, website, photos_json, interests_json, languages_json, relationship_goal,
         compatibility_score, is_online, last_active, is_verified, is_boosted, is_visible,
         show_age, show_approx_location, allow_calls, allow_messages, created_at, updated_at
       ) VALUES (
         ?, ?, 'native', ?, ?, ?, ?, ?, ?, 'Downtown',
-        15, 'Hello! I just joined Global Match to connect with genuine people worldwide.',
+        15, 'Hello! I just joined Global Match to connect with genuine people worldwide.', '', ?, '{}', '',
         ?, '["Travel", "Music", "Food", "Culture"]', '["English"]', 'Long-term relationship',
         92, 0, ?, 1, 0, 1, 1, 1, 1, 1, ?, ?
       )`,
@@ -342,6 +415,7 @@ app.post('/api/auth/register', async (req, res) => {
         gender || 'MALE',
         userCountry,
         userCity,
+        uniqueUsername,
         JSON.stringify([defaultPhoto]),
         now,
         now,
@@ -349,7 +423,7 @@ app.post('/api/auth/register', async (req, res) => {
       ]
     );
 
-    console.log(`[SQL Database] Registered new user into SQLite: ${cleanEmail} (ID: ${newUserId}, Profile ID: ${newProfileId})`);
+    console.log(`[SQL Database] Registered new user into SQLite: ${cleanEmail} (ID: ${newUserId}, Profile ID: ${newProfileId}, Username: @${uniqueUsername})`);
 
     // REQUIREMENT: DO NOT auto-login. Prompt user to manually log in.
     res.json({
@@ -358,6 +432,7 @@ app.post('/api/auth/register', async (req, res) => {
       registeredEmail: cleanEmail,
       userId: newUserId,
       profileId: newProfileId,
+      username: uniqueUsername,
     });
   } catch (err: any) {
     console.error('[SQL Auth] Register error:', err);
@@ -410,16 +485,18 @@ app.get('/api/public-profiles/:id', async (req, res) => {
       }
     }
 
+    const cleanIdentifier = targetIdentifier.replace(/^@/, '');
+
     // 1. Try fetching rich social public profile from PostgreSQL
-    let profile = targetIdentifier && targetIdentifier !== 'undefined' && targetIdentifier !== 'null'
-      ? await getPublicProfileById(targetIdentifier, currentUserId).catch(() => null)
+    let profile = cleanIdentifier && cleanIdentifier !== 'undefined' && cleanIdentifier !== 'null'
+      ? await getPublicProfileById(cleanIdentifier, currentUserId).catch(() => null)
       : null;
 
-    // Fallback 1: If not in PostgreSQL yet, check SQLite by id or user_id
-    if (!profile && targetIdentifier && targetIdentifier !== 'undefined') {
+    // Fallback 1: If not in PostgreSQL yet, check SQLite by id, user_id, or username
+    if (!profile && cleanIdentifier && cleanIdentifier !== 'undefined') {
       const sqliteRow = await SqlHelper.queryOne(
-        'SELECT * FROM profiles WHERE id = ? OR user_id = ?',
-        [targetIdentifier, targetIdentifier]
+        'SELECT * FROM profiles WHERE id = ? OR user_id = ? OR LOWER(username) = ?',
+        [cleanIdentifier, cleanIdentifier, cleanIdentifier.toLowerCase()]
       );
       if (sqliteRow) {
         profile = formatProfileRow(sqliteRow);
@@ -692,7 +769,11 @@ app.post('/api/notifications/:id/read', async (req, res) => {
 });
 
 app.get('/api/profiles/:id', async (req, res) => {
-  const row = await SqlHelper.queryOne('SELECT * FROM profiles WHERE id = ? OR user_id = ?', [req.params.id, req.params.id]);
+  const cleanId = (req.params.id || '').trim().replace(/^@/, '');
+  const row = await SqlHelper.queryOne(
+    'SELECT * FROM profiles WHERE id = ? OR user_id = ? OR LOWER(username) = ?',
+    [cleanId, cleanId, cleanId.toLowerCase()]
+  );
   if (!row) return res.status(404).json({ error: 'Profile not found' });
   res.json({ profile: formatProfileRow(row) });
 });
@@ -707,6 +788,9 @@ app.put('/api/profiles/me', async (req, res) => {
     name,
     bio,
     cover_photo,
+    username,
+    social_links,
+    website,
     photos,
     interests,
     languages,
@@ -726,6 +810,42 @@ app.put('/api/profiles/me', async (req, res) => {
 
   const now = new Date().toISOString();
 
+  // Validate and sanitize website
+  let sanitizedWebsite: string | null = null;
+  if (website !== undefined) {
+    sanitizedWebsite = website ? sanitizeSafeUrl(website) : '';
+  }
+
+  // Validate and sanitize social links
+  let sanitizedSocialObj: Record<string, string> | undefined = undefined;
+  let sanitizedSocialJson: string | null = null;
+  if (social_links !== undefined) {
+    sanitizedSocialObj = sanitizeSocialLinks(social_links);
+    sanitizedSocialJson = JSON.stringify(sanitizedSocialObj);
+  }
+
+  // Validate and sanitize username
+  let cleanUsername: string | null | undefined = undefined;
+  if (username !== undefined) {
+    if (typeof username === 'string' && username.trim()) {
+      const raw = username.trim().toLowerCase().replace(/^@/, '').replace(/[^a-z0-9._-]/g, '').slice(0, 30);
+      if (raw.length < 3) {
+        return res.status(400).json({ error: 'Username must be at least 3 characters long (letters, numbers, underscores, dashes, dots).' });
+      }
+      // Check for conflict with other users
+      const conflict = await SqlHelper.queryOne(
+        'SELECT id, user_id FROM profiles WHERE LOWER(username) = ? AND user_id != ? AND id != ?',
+        [raw, user.id, user.id]
+      );
+      if (conflict) {
+        return res.status(400).json({ error: `@${raw} is already taken by another member. Please choose a different username.` });
+      }
+      cleanUsername = raw;
+    } else {
+      cleanUsername = null;
+    }
+  }
+
   // Check if profile exists
   let existingProfile = await SqlHelper.queryOne('SELECT * FROM profiles WHERE user_id = ? OR id = ?', [user.id, user.id]);
 
@@ -733,21 +853,23 @@ app.put('/api/profiles/me', async (req, res) => {
     // Create new profile row for this user if missing
     const newProfileId = `prf_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`;
     const defaultPhoto = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=1000&q=80';
+    const fallbackUsername = (name ? name.trim() : user.email.split('@')[0] || 'member').toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 20);
     await SqlHelper.execute(
       `INSERT INTO profiles (
         id, user_id, source_type, name, age, date_of_birth, gender, country, city, region,
-        approx_distance_km, bio, cover_photo, photos_json, interests_json, languages_json, relationship_goal,
+        approx_distance_km, bio, cover_photo, username, social_links_json, website, photos_json, interests_json, languages_json, relationship_goal,
         compatibility_score, is_online, last_active, is_verified, is_boosted, is_visible,
         show_age, show_approx_location, allow_calls, allow_messages, created_at, updated_at
       ) VALUES (
         ?, ?, 'native', ?, 25, '1999-01-01', 'FEMALE', 'Global', 'New York', 'Downtown',
-        15, '', '', ?, '["Travel", "Music"]', '["English"]', 'Long-term relationship',
+        15, '', '', ?, '{}', '', ?, '["Travel", "Music"]', '["English"]', 'Long-term relationship',
         90, 1, ?, 1, 0, 1, 1, 1, 1, 1, ?, ?
       )`,
       [
         newProfileId,
         user.id,
         name ? name.trim() : (user.email.split('@')[0] || 'Member'),
+        fallbackUsername,
         JSON.stringify(Array.isArray(photos) && photos.length > 0 ? photos : [defaultPhoto]),
         now,
         now,
@@ -774,6 +896,9 @@ app.put('/api/profiles/me', async (req, res) => {
       name = COALESCE(?, name),
       bio = COALESCE(?, bio),
       cover_photo = COALESCE(?, cover_photo),
+      username = CASE WHEN ? = 1 THEN ? ELSE username END,
+      social_links_json = CASE WHEN ? = 1 THEN ? ELSE social_links_json END,
+      website = CASE WHEN ? = 1 THEN ? ELSE website END,
       photos_json = COALESCE(?, photos_json),
       interests_json = COALESCE(?, interests_json),
       languages_json = COALESCE(?, languages_json),
@@ -796,6 +921,12 @@ app.put('/api/profiles/me', async (req, res) => {
       name !== undefined && name !== null ? name.trim() : null,
       bio !== undefined && bio !== null ? bio : null,
       cover_photo !== undefined && cover_photo !== null ? cover_photo : null,
+      username !== undefined ? 1 : 0,
+      cleanUsername,
+      social_links !== undefined ? 1 : 0,
+      sanitizedSocialJson,
+      website !== undefined ? 1 : 0,
+      sanitizedWebsite,
       photos !== undefined && photos !== null ? (Array.isArray(photos) ? JSON.stringify(photos) : photos) : null,
       interests !== undefined && interests !== null ? (Array.isArray(interests) ? JSON.stringify(interests) : interests) : null,
       languages !== undefined && languages !== null ? (Array.isArray(languages) ? JSON.stringify(languages) : languages) : null,
@@ -824,6 +955,9 @@ app.put('/api/profiles/me', async (req, res) => {
       name: name !== undefined ? name.trim() : undefined,
       bio,
       cover_photo,
+      username: cleanUsername !== undefined ? (cleanUsername || undefined) : undefined,
+      social_links: sanitizedSocialObj,
+      website: sanitizedWebsite !== null ? sanitizedWebsite : undefined,
       photos,
       interests,
       languages,

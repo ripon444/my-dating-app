@@ -48,6 +48,9 @@ export function formatDbProfile(profileRow: any, extra?: { followers_count?: num
     approx_distance_km: Number(profileRow.approxDistanceKm) || 15,
     bio: profileRow.bio || '',
     cover_photo: profileRow.coverPhoto || '',
+    username: profileRow.username || (profileRow.name ? profileRow.name.toLowerCase().replace(/[^a-z0-9]/g, '_') : undefined),
+    social_links: typeof profileRow.socialLinksJson === 'string' ? JSON.parse(profileRow.socialLinksJson || '{}') : ((profileRow as any).social_links || {}),
+    website: profileRow.website || '',
     photos,
     interests,
     languages,
@@ -84,11 +87,12 @@ export function formatDbProfile(profileRow: any, extra?: { followers_count?: num
  */
 export async function getPublicProfileById(targetIdentifier: string, currentUserId?: string) {
   try {
-    // Check if targetIdentifier is a userId or profileId
+    // Check if targetIdentifier is a userId, profileId, or username
     const profileRows = await db.select().from(profiles).where(
       or(
         eq(profiles.id, targetIdentifier),
-        eq(profiles.userId, targetIdentifier)
+        eq(profiles.userId, targetIdentifier),
+        eq(profiles.username, targetIdentifier.toLowerCase())
       )
     ).limit(1);
 
@@ -473,6 +477,9 @@ export async function updateProfile(userId: string, data: Partial<Profile>) {
     if (data.photos !== undefined) updateValues.photosJson = JSON.stringify(data.photos);
     if (data.interests !== undefined) updateValues.interestsJson = JSON.stringify(data.interests);
     if (data.languages !== undefined) updateValues.languagesJson = JSON.stringify(data.languages);
+    if (data.username !== undefined) updateValues.username = data.username ? data.username.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '') : null;
+    if (data.social_links !== undefined) updateValues.socialLinksJson = JSON.stringify(data.social_links);
+    if (data.website !== undefined) updateValues.website = data.website;
 
     await db.update(profiles)
       .set(updateValues)

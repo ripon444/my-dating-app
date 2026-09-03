@@ -51,6 +51,39 @@ import { soundManager } from './utils/sound';
 import { api } from './services/api';
 import { getSocket } from './services/socket';
 
+// Helper function to extract profile target from Facebook-style URL
+function getProfileTargetFromUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+  const path = window.location.pathname;
+  // Match /profile/:identifier
+  const profileMatch = path.match(/^\/profile\/([a-zA-Z0-9_.-]+)/i);
+  if (profileMatch && profileMatch[1]) {
+    return decodeURIComponent(profileMatch[1]);
+  }
+  // Match /@:username
+  const atMatch = path.match(/^\/@([a-zA-Z0-9_.-]+)/i);
+  if (atMatch && atMatch[1]) {
+    return decodeURIComponent(atMatch[1]);
+  }
+  // Check hash e.g. #/profile/:id or #@username
+  const hash = window.location.hash;
+  const hashMatch = hash.match(/^#\/?profile\/([a-zA-Z0-9_.-]+)/i);
+  if (hashMatch && hashMatch[1]) {
+    return decodeURIComponent(hashMatch[1]);
+  }
+  const hashAtMatch = hash.match(/^#\/?@([a-zA-Z0-9_.-]+)/i);
+  if (hashAtMatch && hashAtMatch[1]) {
+    return decodeURIComponent(hashAtMatch[1]);
+  }
+  // Check query parameter
+  const urlParams = new URLSearchParams(window.location.search);
+  const qProfile = urlParams.get('profile') || urlParams.get('username') || urlParams.get('u');
+  if (qProfile) {
+    return qProfile.trim();
+  }
+  return null;
+}
+
 function MainApp() {
   const { t } = useTranslation();
 
@@ -124,17 +157,37 @@ function MainApp() {
 
   // Social & Registered Users Search / Profile
   const [isUserSearchOpen, setIsUserSearchOpen] = useState(false);
-  const [selectedPublicUserId, setSelectedPublicUserId] = useState<string | null>(null);
+  const [selectedPublicUserId, setSelectedPublicUserId] = useState<string | null>(() => getProfileTargetFromUrl());
   const [selectedPublicProfile, setSelectedPublicProfile] = useState<Profile | null>(null);
   const [notifications, setNotifications] = useState<any[]>([]);
 
   const handleOpenPublicProfile = (target: Profile | string) => {
+    let identifier = '';
     if (typeof target === 'string') {
+      identifier = target;
       setSelectedPublicUserId(target);
       setSelectedPublicProfile(null);
     } else {
+      identifier = target.username || target.user_id || target.id;
       setSelectedPublicProfile(target);
       setSelectedPublicUserId(target.user_id || target.id);
+    }
+
+    if (typeof window !== 'undefined' && identifier) {
+      const targetPath = `/profile/${identifier}`;
+      if (window.location.pathname !== targetPath) {
+        window.history.pushState({ profileTarget: identifier }, '', targetPath);
+      }
+    }
+  };
+
+  const handleClosePublicProfile = () => {
+    setSelectedPublicUserId(null);
+    setSelectedPublicProfile(null);
+    if (typeof window !== 'undefined') {
+      if (window.location.pathname.startsWith('/profile/') || window.location.pathname.startsWith('/@')) {
+        window.history.pushState({}, '', '/');
+      }
     }
   };
 
@@ -244,6 +297,15 @@ function MainApp() {
         search.includes('admin=tanvir') ||
         search.includes('route=tanvir');
       setIsAdminRoute(isTanvir);
+
+      // Check if URL points to a public profile
+      const urlProfileTarget = getProfileTargetFromUrl();
+      if (urlProfileTarget) {
+        setSelectedPublicUserId(urlProfileTarget);
+      } else if (path === '/' || path === '') {
+        setSelectedPublicUserId(null);
+        setSelectedPublicProfile(null);
+      }
     };
 
     window.addEventListener('popstate', handleUrlChange);
@@ -1104,10 +1166,7 @@ function MainApp() {
         <div id="public-profile-viewer-modal" className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md p-2 sm:p-6 flex justify-center items-start">
           <div className="w-full max-w-5xl relative my-2 sm:my-4">
             <button
-              onClick={() => {
-                setSelectedPublicUserId(null);
-                setSelectedPublicProfile(null);
-              }}
+              onClick={handleClosePublicProfile}
               className="fixed top-4 right-4 z-50 px-4 py-2 rounded-full bg-black/80 hover:bg-black text-white text-xs font-bold border border-white/20 shadow-2xl flex items-center gap-1.5 transition cursor-pointer"
             >
               <X className="w-4 h-4" />
@@ -1121,36 +1180,28 @@ function MainApp() {
               currentUserProfile={currentProfile}
               currentUserId={currentUser?.id || currentProfile?.user_id}
               isOwnProfile={selectedPublicUserId === currentUser?.id || selectedPublicUserId === currentProfile?.user_id}
-              onBack={() => {
-                setSelectedPublicUserId(null);
-                setSelectedPublicProfile(null);
-              }}
+              onBack={handleClosePublicProfile}
               onNavigateProfile={(target) => {
                 handleOpenPublicProfile(target);
               }}
               onStartChat={(otherId) => {
-                setSelectedPublicUserId(null);
-                setSelectedPublicProfile(null);
+                handleClosePublicProfile();
                 handleStartChat(otherId);
               }}
               onStartCall={(otherId, type) => {
-                setSelectedPublicUserId(null);
-                setSelectedPublicProfile(null);
+                handleClosePublicProfile();
                 handleStartCall(otherId, type);
               }}
               onEditProfile={() => {
-                setSelectedPublicUserId(null);
-                setSelectedPublicProfile(null);
+                handleClosePublicProfile();
                 setIsProfileEditOpen(true);
               }}
               onManagePlan={() => {
-                setSelectedPublicUserId(null);
-                setSelectedPublicProfile(null);
+                handleClosePublicProfile();
                 setIsSubscriptionOpen(true);
               }}
               onBoostProfile={() => {
-                setSelectedPublicUserId(null);
-                setSelectedPublicProfile(null);
+                handleClosePublicProfile();
                 setIsBoostOpen(true);
               }}
             />

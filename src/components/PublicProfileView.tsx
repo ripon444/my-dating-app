@@ -32,10 +32,14 @@ import {
   Upload,
   Star,
   Globe,
+  Check,
+  AtSign,
 } from 'lucide-react';
 import { Profile, User } from '../types';
 import { api } from '../services/api';
 import { FollowListModal } from './FollowListModal';
+import { ShareProfileModal } from './ShareProfileModal';
+import { SocialLinksDisplay } from './SocialLinksDisplay';
 
 interface PublicProfileViewProps {
   profileIdOrUserId?: string;
@@ -122,6 +126,10 @@ export const PublicProfileView: React.FC<PublicProfileViewProps> = ({
   const [customCoverUrl, setCustomCoverUrl] = useState('');
   const [savingCover, setSavingCover] = useState(false);
   const coverFileRef = useRef<HTMLInputElement>(null);
+
+  // Facebook-style Share Profile Modal & Copy Link states
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [copiedDirectLink, setCopiedDirectLink] = useState(false);
 
   const isOwnProfile = isSelf;
 
@@ -263,11 +271,24 @@ export const PublicProfileView: React.FC<PublicProfileViewProps> = ({
     }
   };
 
-  const handleShareProfile = () => {
-    const url = window.location.href;
+  const getUniqueProfileUrl = () => {
+    if (!profile) return typeof window !== 'undefined' ? window.location.href : '';
+    const identifier = profile.username || profile.user_id || profile.id;
+    return `${window.location.origin}/profile/${identifier}`;
+  };
+
+  const handleCopyProfileLink = () => {
+    const url = getUniqueProfileUrl();
     navigator.clipboard.writeText(url).then(() => {
-      showToast('Profile link copied to clipboard! 📋');
+      setCopiedDirectLink(true);
+      showToast('Unique profile link copied to clipboard! 📋');
+      setTimeout(() => setCopiedDirectLink(false), 2500);
     });
+    setMenuOpen(false);
+  };
+
+  const handleShareProfile = () => {
+    setShowShareModal(true);
     setMenuOpen(false);
   };
 
@@ -452,11 +473,19 @@ export const PublicProfileView: React.FC<PublicProfileViewProps> = ({
                   className="absolute right-0 mt-2 w-48 bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl py-1.5 z-30"
                 >
                   <button
+                    onClick={handleCopyProfileLink}
+                    className="w-full px-4 py-2.5 text-left text-xs font-medium text-neutral-300 hover:bg-neutral-800 flex items-center gap-2"
+                  >
+                    {copiedDirectLink ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-neutral-400" />}
+                    <span>{copiedDirectLink ? 'Copied Profile Link!' : 'Copy Profile Link'}</span>
+                  </button>
+
+                  <button
                     onClick={handleShareProfile}
                     className="w-full px-4 py-2.5 text-left text-xs font-medium text-neutral-300 hover:bg-neutral-800 flex items-center gap-2"
                   >
-                    <Copy className="w-4 h-4 text-neutral-400" />
-                    Copy Profile Link
+                    <Share2 className="w-4 h-4 text-rose-400" />
+                    Share Profile...
                   </button>
 
                   {!isOwnProfile && currentUser && (
@@ -568,6 +597,43 @@ export const PublicProfileView: React.FC<PublicProfileViewProps> = ({
                   )}
                 </div>
 
+                {/* Facebook-style Username Handle & 1-Click Profile Link Copy */}
+                <div className="flex items-center justify-center md:justify-start gap-2 flex-wrap">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-neutral-950/80 border border-neutral-800 text-xs font-mono text-neutral-300">
+                    <AtSign className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                    <span className="font-semibold text-white">{profile.username || profile.user_id || profile.id}</span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleCopyProfileLink}
+                    title="Copy Unique Profile Link"
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-neutral-800/90 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-700 transition cursor-pointer"
+                  >
+                    {copiedDirectLink ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-400" />
+                        <span className="text-emerald-400">Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3 text-neutral-400" />
+                        <span>Copy Link</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleShareProfile}
+                    title="Share Profile"
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-neutral-800/90 hover:bg-neutral-700 text-rose-400 hover:text-rose-300 border border-neutral-700 transition cursor-pointer"
+                  >
+                    <Share2 className="w-3 h-3" />
+                    <span>Share</span>
+                  </button>
+                </div>
+
                 {/* City & Country / Profession */}
                 <div className="flex items-center justify-center md:justify-start gap-3 text-xs md:text-sm text-neutral-400 flex-wrap">
                   {(profile.city || profile.country) && (
@@ -621,20 +687,50 @@ export const PublicProfileView: React.FC<PublicProfileViewProps> = ({
                     <span className="text-neutral-400 font-medium">Following</span>
                   </button>
                 </div>
+
+                {/* Compact Social Media Icons Strip */}
+                <SocialLinksDisplay
+                  socialLinks={profile.social_links}
+                  website={profile.website}
+                  isOwnProfile={isOwnProfile}
+                  onAddLinks={onEditProfile}
+                  compact={true}
+                  className="pt-2 justify-center md:justify-start"
+                />
               </div>
             </div>
 
             {/* Action Buttons Bar (Requirement 3, 4, 11, 12) */}
             <div className="flex items-center gap-2.5 flex-wrap justify-center w-full md:w-auto pt-2 md:pt-0">
               {isOwnProfile ? (
-                <button
-                  id="btn-owner-edit-profile"
-                  onClick={onEditProfile}
-                  className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-semibold rounded-xl text-sm transition-all shadow-lg shadow-rose-950/50 flex items-center gap-2"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span>Edit Profile</span>
-                </button>
+                <div className="flex items-center gap-2 flex-wrap justify-center">
+                  <button
+                    id="btn-owner-edit-profile"
+                    onClick={onEditProfile}
+                    className="px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-semibold rounded-xl text-sm transition-all shadow-lg shadow-rose-950/50 flex items-center gap-2 cursor-pointer"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>Edit Profile</span>
+                  </button>
+
+                  <button
+                    id="btn-owner-copy-link"
+                    onClick={handleCopyProfileLink}
+                    className="px-3.5 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white font-semibold rounded-xl text-sm transition-all border border-neutral-700 flex items-center gap-2 cursor-pointer shadow-sm"
+                  >
+                    {copiedDirectLink ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-neutral-400" />}
+                    <span>{copiedDirectLink ? 'Copied' : 'Copy Link'}</span>
+                  </button>
+
+                  <button
+                    id="btn-owner-share-profile"
+                    onClick={handleShareProfile}
+                    className="px-3.5 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white font-semibold rounded-xl text-sm transition-all border border-neutral-700 flex items-center gap-2 cursor-pointer shadow-sm"
+                  >
+                    <Share2 className="w-4 h-4 text-rose-400" />
+                    <span>Share</span>
+                  </button>
+                </div>
               ) : (
                 <>
                   {/* Follow / Unfollow Button */}
@@ -706,6 +802,16 @@ export const PublicProfileView: React.FC<PublicProfileViewProps> = ({
                     className="p-2.5 bg-rose-950/40 hover:bg-rose-900/60 text-rose-400 hover:text-rose-300 border border-rose-800/60 rounded-xl transition-all shadow-sm"
                   >
                     <Heart className="w-4 h-4" />
+                  </button>
+
+                  {/* Share Profile Button */}
+                  <button
+                    id="btn-profile-share-icon"
+                    title="Share Profile"
+                    onClick={handleShareProfile}
+                    className="p-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-700 rounded-xl transition-all shadow-sm cursor-pointer"
+                  >
+                    <Share2 className="w-4 h-4 text-rose-400" />
                   </button>
                 </>
               )}
@@ -821,6 +927,33 @@ export const PublicProfileView: React.FC<PublicProfileViewProps> = ({
 
             {/* Right: Quick Info Cards */}
             <div className="space-y-6">
+              {/* Social Media & Personal Website Card (Facebook Style) */}
+              <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 shadow-xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-emerald-400" />
+                    <span>Social Media & Links</span>
+                  </h3>
+                  {isOwnProfile && onEditProfile && (
+                    <button
+                      type="button"
+                      onClick={onEditProfile}
+                      className="text-xs font-semibold text-rose-400 hover:text-rose-300 transition cursor-pointer"
+                    >
+                      Edit
+                    </button>
+                  )}
+                </div>
+
+                <SocialLinksDisplay
+                  socialLinks={profile.social_links}
+                  website={profile.website}
+                  isOwnProfile={isOwnProfile}
+                  onAddLinks={onEditProfile}
+                  compact={false}
+                />
+              </div>
+
               <div className="bg-neutral-900 border border-neutral-800 rounded-3xl p-6 shadow-xl space-y-4">
                 <h3 className="text-base font-bold text-white">Profile Details</h3>
 
@@ -1320,6 +1453,15 @@ export const PublicProfileView: React.FC<PublicProfileViewProps> = ({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Facebook-style Share Profile Modal */}
+      {profile && (
+        <ShareProfileModal
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          profile={profile}
+        />
+      )}
     </div>
   );
 };

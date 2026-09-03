@@ -138,6 +138,9 @@ function initTables(db: Database) {
       approx_distance_km REAL DEFAULT 15,
       bio TEXT,
       cover_photo TEXT,
+      username TEXT,
+      social_links_json TEXT DEFAULT '{}',
+      website TEXT DEFAULT '',
       photos_json TEXT,
       interests_json TEXT,
       languages_json TEXT,
@@ -293,6 +296,18 @@ function initTables(db: Database) {
   } catch (e) {}
   try {
     db.run('ALTER TABLE profiles ADD COLUMN allow_messages INTEGER DEFAULT 1;');
+  } catch (e) {}
+  try {
+    db.run('ALTER TABLE profiles ADD COLUMN username TEXT;');
+  } catch (e) {}
+  try {
+    db.run("ALTER TABLE profiles ADD COLUMN social_links_json TEXT DEFAULT '{}';");
+  } catch (e) {}
+  try {
+    db.run("ALTER TABLE profiles ADD COLUMN website TEXT DEFAULT '';");
+  } catch (e) {}
+  try {
+    db.run('CREATE INDEX IF NOT EXISTS idx_profiles_username ON profiles(username);');
   } catch (e) {}
 
   // Seed default admin account if not existing

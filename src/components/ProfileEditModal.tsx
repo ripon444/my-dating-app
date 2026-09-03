@@ -18,9 +18,20 @@ import {
   Camera,
   Star,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Facebook,
+  Instagram,
+  Twitter,
+  Youtube,
+  Linkedin,
+  Send,
+  Copy,
+  ExternalLink,
+  Link2,
+  Music2,
+  AtSign
 } from 'lucide-react';
-import { Profile } from '../types';
+import { Profile, SocialLinks } from '../types';
 import { api } from '../services/api';
 import { AiBioModal } from './AiBioModal';
 import { LocationSelector } from './LocationSelector';
@@ -69,6 +80,10 @@ export const ProfileEditModal: React.FC<ProfileEditModalProps> = ({
   const [isAiBioOpen, setIsAiBioOpen] = useState(false);
   const [newInterestInput, setNewInterestInput] = useState('');
   const [newLangInput, setNewLangInput] = useState('');
+  const [usernameInput, setUsernameInput] = useState(profile?.username || '');
+  const [websiteInput, setWebsiteInput] = useState(profile?.website || '');
+  const [socialLinks, setSocialLinks] = useState<SocialLinks>(profile?.social_links || {});
+  const [copiedLink, setCopiedLink] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -83,6 +98,9 @@ export const ProfileEditModal: React.FC<ProfileEditModalProps> = ({
         languages: profile.languages || [],
         cover_photo: profile.cover_photo || '',
       });
+      setUsernameInput(profile.username || '');
+      setWebsiteInput(profile.website || '');
+      setSocialLinks(profile.social_links || {});
       setSaveSuccess(false);
       setErrorMessage('');
     }
@@ -265,7 +283,14 @@ export const ProfileEditModal: React.FC<ProfileEditModalProps> = ({
     setIsSaving(true);
     setErrorMessage('');
     try {
-      const res = await api.updateProfile(formData);
+      const cleanUsername = usernameInput.trim().toLowerCase().replace(/^@+/, '');
+      const payload: Partial<Profile> = {
+        ...formData,
+        username: cleanUsername,
+        website: websiteInput.trim(),
+        social_links: socialLinks,
+      };
+      const res = await api.updateProfile(payload);
       if (res && res.profile) {
         onProfileUpdated(res.profile);
         setSaveSuccess(true);
@@ -750,6 +775,231 @@ export const ProfileEditModal: React.FC<ProfileEditModalProps> = ({
                   placeholder="e.g. 175"
                   className="w-full bg-stone-800 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 text-xs focus:outline-none focus:border-rose-500"
                 />
+              </div>
+            </div>
+
+            {/* UNIQUE PROFILE LINK & USERNAME (Facebook Style) */}
+            <div className="p-4 rounded-2xl bg-neutral-950/80 border border-neutral-800 space-y-3.5 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-rose-500/20 text-rose-400 flex items-center justify-center">
+                    <AtSign className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-stone-200 text-xs uppercase tracking-wider">
+                      Unique Profile URL & Username
+                    </div>
+                    <div className="text-[10px] text-stone-400">
+                      Create your personalized Facebook-style shareable profile link
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Username Input Field */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-stone-300">
+                  Custom Username / Profile Handle
+                </label>
+                <div className="relative flex items-center">
+                  <span className="absolute left-3 text-stone-400 font-mono text-xs font-bold select-none">
+                    @
+                  </span>
+                  <input
+                    type="text"
+                    value={usernameInput}
+                    onChange={(e) => setUsernameInput(e.target.value.toLowerCase().replace(/[^a-z0-9_.-]/g, ''))}
+                    placeholder="your_unique_username"
+                    maxLength={30}
+                    className="w-full bg-stone-900 border border-stone-700 rounded-xl pl-8 pr-3 py-2 text-stone-100 font-mono text-xs focus:outline-none focus:border-rose-500"
+                  />
+                </div>
+                <p className="text-[10px] text-stone-400">
+                  3–30 characters: lowercase letters, numbers, underscores, dots, or dashes.
+                </p>
+              </div>
+
+              {/* Live Unique Profile URL Box */}
+              <div className="space-y-1.5 pt-1 border-t border-stone-800/80">
+                <label className="text-[11px] font-semibold text-stone-300 flex items-center justify-between">
+                  <span>Your Shareable Public Profile URL</span>
+                  {copiedLink && (
+                    <span className="text-emerald-400 font-bold text-[10px] flex items-center gap-1">
+                      <Check className="w-3 h-3" /> Copied!
+                    </span>
+                  )}
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${typeof window !== 'undefined' ? window.location.origin : ''}/profile/${usernameInput.trim().replace(/^@+/, '') || profile.username || profile.user_id || profile.id}`}
+                    onClick={(e) => (e.target as HTMLInputElement).select()}
+                    className="flex-1 bg-stone-900 border border-stone-800 rounded-xl px-3 py-2 text-stone-300 font-mono text-[11px] focus:outline-none focus:border-rose-500 select-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const shareUrl = `${window.location.origin}/profile/${usernameInput.trim().replace(/^@+/, '') || profile.username || profile.user_id || profile.id}`;
+                      navigator.clipboard.writeText(shareUrl);
+                      setCopiedLink(true);
+                      setTimeout(() => setCopiedLink(false), 2000);
+                    }}
+                    className="px-3 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedLink ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* SOCIAL MEDIA LINKS & PERSONAL WEBSITE (Facebook Style) */}
+            <div className="p-4 rounded-2xl bg-neutral-950/80 border border-neutral-800 space-y-4 shadow-sm">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                  <Globe className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <div className="font-bold text-stone-200 text-xs uppercase tracking-wider">
+                    Social Media & Personal Website
+                  </div>
+                  <div className="text-[10px] text-stone-400">
+                    Add social profiles to display verified brand icons on your public profile
+                  </div>
+                </div>
+              </div>
+
+              {/* Personal Website */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-stone-300 flex items-center gap-1.5">
+                  <Globe className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Personal Website / Portfolio</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="url"
+                    value={websiteInput}
+                    onChange={(e) => setWebsiteInput(e.target.value)}
+                    placeholder="https://yourwebsite.com"
+                    className="flex-1 bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 text-xs focus:outline-none focus:border-rose-500"
+                  />
+                  {websiteInput && (
+                    <button
+                      type="button"
+                      onClick={() => setWebsiteInput('')}
+                      title="Clear website"
+                      className="p-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-white transition"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Grid of Social Platforms */}
+              <div className="space-y-3 pt-2 border-t border-stone-800/80">
+                <div className="text-[11px] font-semibold text-stone-300">Social Accounts</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {[
+                    {
+                      key: 'facebook' as const,
+                      label: 'Facebook',
+                      icon: Facebook,
+                      iconColor: 'text-blue-500',
+                      placeholder: 'facebook.com/username or username',
+                    },
+                    {
+                      key: 'instagram' as const,
+                      label: 'Instagram',
+                      icon: Instagram,
+                      iconColor: 'text-pink-500',
+                      placeholder: '@username or instagram.com/...',
+                    },
+                    {
+                      key: 'twitter' as const,
+                      label: 'X (Twitter)',
+                      icon: Twitter,
+                      iconColor: 'text-stone-100',
+                      placeholder: '@handle or x.com/username',
+                    },
+                    {
+                      key: 'tiktok' as const,
+                      label: 'TikTok',
+                      icon: Music2,
+                      iconColor: 'text-teal-400',
+                      placeholder: '@username or tiktok.com/@...',
+                    },
+                    {
+                      key: 'youtube' as const,
+                      label: 'YouTube',
+                      icon: Youtube,
+                      iconColor: 'text-red-500',
+                      placeholder: '@channel or youtube.com/...',
+                    },
+                    {
+                      key: 'linkedin' as const,
+                      label: 'LinkedIn',
+                      icon: Linkedin,
+                      iconColor: 'text-sky-400',
+                      placeholder: 'linkedin.com/in/username',
+                    },
+                    {
+                      key: 'telegram' as const,
+                      label: 'Telegram',
+                      icon: Send,
+                      iconColor: 'text-cyan-400',
+                      placeholder: '@username or t.me/username',
+                    },
+                    {
+                      key: 'whatsapp' as const,
+                      label: 'WhatsApp',
+                      icon: MessageCircle,
+                      iconColor: 'text-emerald-400',
+                      placeholder: '+1234567890 or wa.me/...',
+                    },
+                  ].map((platform) => {
+                    const Icon = platform.icon;
+                    const currentValue = socialLinks[platform.key] || '';
+                    return (
+                      <div key={platform.key} className="space-y-1">
+                        <label className="text-[10px] font-medium text-stone-400 flex items-center gap-1.5">
+                          <Icon className={`w-3.5 h-3.5 ${platform.iconColor}`} />
+                          <span>{platform.label}</span>
+                        </label>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            value={currentValue}
+                            onChange={(e) =>
+                              setSocialLinks({
+                                ...socialLinks,
+                                [platform.key]: e.target.value,
+                              })
+                            }
+                            placeholder={platform.placeholder}
+                            className="flex-1 bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 text-xs focus:outline-none focus:border-rose-500"
+                          />
+                          {currentValue ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSocialLinks({
+                                  ...socialLinks,
+                                  [platform.key]: '',
+                                })
+                              }
+                              title={`Remove ${platform.label}`}
+                              className="p-2 rounded-xl bg-stone-800 hover:bg-rose-950/40 text-stone-400 hover:text-rose-400 transition"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
