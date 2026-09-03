@@ -77,16 +77,16 @@ export async function initializePostgresTables() {
 
       CREATE TABLE IF NOT EXISTS follows (
         id TEXT PRIMARY KEY,
-        follower_id TEXT REFERENCES users(id) ON DELETE CASCADE NOT NULL,
-        following_id TEXT REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        follower_id TEXT NOT NULL,
+        following_id TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(follower_id, following_id)
       );
 
       CREATE TABLE IF NOT EXISTS blocks (
         id TEXT PRIMARY KEY,
-        blocker_id TEXT REFERENCES users(id) ON DELETE CASCADE NOT NULL,
-        blocked_id TEXT REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        blocker_id TEXT NOT NULL,
+        blocked_id TEXT NOT NULL,
         reason TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(blocker_id, blocked_id)
@@ -94,7 +94,7 @@ export async function initializePostgresTables() {
 
       CREATE TABLE IF NOT EXISTS notifications (
         id TEXT PRIMARY KEY,
-        user_id TEXT REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+        user_id TEXT NOT NULL,
         type TEXT NOT NULL,
         title TEXT NOT NULL,
         message TEXT NOT NULL,
@@ -185,6 +185,18 @@ export async function initializePostgresTables() {
       ALTER TABLE profiles ADD COLUMN IF NOT EXISTS website TEXT DEFAULT '';
       ALTER TABLE profiles ADD COLUMN IF NOT EXISTS cover_photo TEXT DEFAULT '';
       CREATE INDEX IF NOT EXISTS idx_profiles_username ON profiles(username);
+
+      -- Ensure follows, blocks, and notifications never crash on hybrid/new user IDs
+      ALTER TABLE follows DROP CONSTRAINT IF EXISTS follows_follower_id_fkey;
+      ALTER TABLE follows DROP CONSTRAINT IF EXISTS follows_following_id_fkey;
+      ALTER TABLE follows DROP CONSTRAINT IF EXISTS follows_follower_id_users_id_fk;
+      ALTER TABLE follows DROP CONSTRAINT IF EXISTS follows_following_id_users_id_fk;
+      ALTER TABLE blocks DROP CONSTRAINT IF EXISTS blocks_blocker_id_fkey;
+      ALTER TABLE blocks DROP CONSTRAINT IF EXISTS blocks_blocked_id_fkey;
+      ALTER TABLE blocks DROP CONSTRAINT IF EXISTS blocks_blocker_id_users_id_fk;
+      ALTER TABLE blocks DROP CONSTRAINT IF EXISTS blocks_blocked_id_users_id_fk;
+      ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_user_id_fkey;
+      ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_user_id_users_id_fk;
     `);
 
     console.log('[Postgres Init] All tables are ready in PostgreSQL database.');

@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import { Profile, User } from '../types';
 import { api } from '../services/api';
+import { getSocket } from '../services/socket';
 import { FollowListModal } from './FollowListModal';
 import { ShareProfileModal } from './ShareProfileModal';
 import { SocialLinksDisplay } from './SocialLinksDisplay';
@@ -133,17 +134,46 @@ export const PublicProfileView: React.FC<PublicProfileViewProps> = ({
 
   const isOwnProfile = isSelf;
 
+  // Real-time socket listener for follower/following count updates
+  useEffect(() => {
+    const socket = getSocket();
+    const handleFollowUpdate = (data: {
+      targetUserId: string;
+      followerId: string;
+      isFollowing: boolean;
+      followersCount: number;
+      followingCount?: number;
+    }) => {
+      const currentProfileTargetId = profile?.user_id || profile?.id;
+      if (currentProfileTargetId && data.targetUserId === currentProfileTargetId) {
+        setFollowersCount(Number(data.followersCount) || 0);
+        if (currentUser?.id === data.followerId) {
+          setIsFollowing(Boolean(data.isFollowing));
+        }
+      }
+      if (isOwnProfile && currentUser?.id === data.followerId && typeof data.followingCount === 'number') {
+        setFollowingCount(Number(data.followingCount) || 0);
+      }
+    };
+
+    socket.on('follow:update', handleFollowUpdate);
+    return () => {
+      socket.off('follow:update', handleFollowUpdate);
+    };
+  }, [profile?.user_id, profile?.id, currentUser?.id, isOwnProfile]);
+
   useEffect(() => {
     loadProfile();
   }, [targetId]);
 
   useEffect(() => {
-    if (activeTab === 'followers' && profile?.user_id) {
+    const targetUserId = profile?.user_id || profile?.id;
+    if (activeTab === 'followers' && targetUserId) {
       loadTabFollowers();
-    } else if (activeTab === 'following' && profile?.user_id) {
+    } else if (activeTab === 'following' && targetUserId) {
       loadTabFollowing();
     }
-  }, [activeTab, profile?.user_id]);
+  }, [activeTab, profile?.user_id, profile?.id]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -158,8 +188,8 @@ export const PublicProfileView: React.FC<PublicProfileViewProps> = ({
       if (data?.profile) {
         setProfile(data.profile);
         setIsFollowing(Boolean(data.profile.is_following));
-        setFollowersCount(data.profile.followers_count ?? 0);
-        setFollowingCount(data.profile.following_count ?? 0);
+        setFollowersCount(Number(data.profile.followers_count) || 0);
+        setFollowingCount(Number(data.profile.following_count) || 0);
         setIsBlocked(Boolean(data.profile.is_blocked));
       } else if (currentUserProfile && isSelf) {
         setProfile(currentUserProfile);
@@ -181,10 +211,11 @@ export const PublicProfileView: React.FC<PublicProfileViewProps> = ({
   };
 
   const loadTabFollowers = async () => {
-    if (!profile?.user_id) return;
+    const targetUserId = profile?.user_id || profile?.id;
+    if (!targetUserId) return;
     setTabListLoading(true);
     try {
-      const res = await api.getFollowers(profile.user_id);
+      const res = await api.getFollowers(targetUserId);
       setTabFollowersList(res.followers || []);
     } catch (err) {
       console.error('Failed to fetch tab followers:', err);
@@ -194,10 +225,11 @@ export const PublicProfileView: React.FC<PublicProfileViewProps> = ({
   };
 
   const loadTabFollowing = async () => {
-    if (!profile?.user_id) return;
+    const targetUserId = profile?.user_id || profile?.id;
+    if (!targetUserId) return;
     setTabListLoading(true);
     try {
-      const res = await api.getFollowing(profile.user_id);
+      const res = await api.getFollowing(targetUserId);
       setTabFollowingList(res.following || []);
     } catch (err) {
       console.error('Failed to fetch tab following:', err);
@@ -216,7 +248,8 @@ export const PublicProfileView: React.FC<PublicProfileViewProps> = ({
       showToast('You cannot follow yourself.');
       return;
     }
-    if (!profile?.user_id) return;
+    const targetUserId = profile?.user_id || profile?.id;
+    if (!targetUserId) return;
 
     setFollowActionLoading(true);
     const prevFollowing = isFollowing;
@@ -228,15 +261,19 @@ export const PublicProfileView: React.FC<PublicProfileViewProps> = ({
 
     try {
       if (prevFollowing) {
-        const res = await api.unfollowUser(profile.user_id);
-        setFollowersCount(res.followersCount);
+        const res = await api.unfollowUser(targetUserId);
+        if (typeof res?.followersCount === 'number') {
+          setFollowersCount(res.followersCount);
+        }
         setIsFollowing(false);
-        showToast(`Unfollowed ${profile.name}`);
+        showToast(`Unfollowed ${profile?.name || 'user'}`);
       } else {
-        const res = await api.followUser(profile.user_id);
-        setFollowersCount(res.followersCount);
+        const res = await api.followUser(targetUserId);
+        if (typeof res?.followersCount === 'number') {
+          setFollowersCount(res.followersCount);
+        }
         setIsFollowing(true);
-        showToast(`Now following ${profile.name}! User received real-time notification.`);
+        showToast(`Now following ${profile?.name || 'user'}! User received real-time notification.`);
       }
     } catch (err: any) {
       // Revert optimistic update
@@ -250,18 +287,19 @@ export const PublicProfileView: React.FC<PublicProfileViewProps> = ({
 
   // Block / Unblock handler (Requirement 11)
   const handleBlockToggle = async () => {
-    if (!currentUser || !profile?.user_id) return;
+    const targetUserId = profile?.user_id || profile?.id;
+    if (!currentUser || !targetUserId) return;
     setBlockLoading(true);
     try {
       if (isBlocked) {
-        await api.unblockUser(profile.user_id);
+        await api.unblockUser(targetUserId);
         setIsBlocked(false);
-        showToast(`Unblocked ${profile.name}.`);
+        showToast(`Unblocked ${profile?.name || 'user'}.`);
       } else {
-        await api.blockUser(profile.user_id, 'User requested block via profile');
+        await api.blockUser(targetUserId, 'User requested block via profile');
         setIsBlocked(true);
         setIsFollowing(false);
-        showToast(`Blocked ${profile.name}. They cannot view or follow you.`);
+        showToast(`Blocked ${profile?.name || 'user'}. They cannot view or follow you.`);
       }
       setShowBlockConfirm(false);
     } catch (err: any) {

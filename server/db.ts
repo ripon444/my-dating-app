@@ -278,14 +278,58 @@ function initTables(db: Database) {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS follows (
+      id TEXT PRIMARY KEY,
+      follower_id TEXT NOT NULL,
+      following_id TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS blocks (
+      id TEXT PRIMARY KEY,
+      blocker_id TEXT NOT NULL,
+      blocked_id TEXT NOT NULL,
+      reason TEXT,
+      created_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
     CREATE INDEX IF NOT EXISTS idx_profiles_user_id ON profiles(user_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
     CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);
     CREATE INDEX IF NOT EXISTS idx_calls_users ON calls(caller_id, receiver_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_follows_pair ON follows(follower_id, following_id);
+    CREATE INDEX IF NOT EXISTS idx_follows_follower ON follows(follower_id);
+    CREATE INDEX IF NOT EXISTS idx_follows_following ON follows(following_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_blocks_pair ON blocks(blocker_id, blocked_id);
+    CREATE INDEX IF NOT EXISTS idx_blocks_blocker ON blocks(blocker_id);
+    CREATE INDEX IF NOT EXISTS idx_blocks_blocked ON blocks(blocked_id);
   `);
 
   // Run safe schema migrations for existing databases
+  try {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS follows (
+        id TEXT PRIMARY KEY,
+        follower_id TEXT NOT NULL,
+        following_id TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS blocks (
+        id TEXT PRIMARY KEY,
+        blocker_id TEXT NOT NULL,
+        blocked_id TEXT NOT NULL,
+        reason TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_follows_pair ON follows(follower_id, following_id);
+      CREATE INDEX IF NOT EXISTS idx_follows_follower ON follows(follower_id);
+      CREATE INDEX IF NOT EXISTS idx_follows_following ON follows(following_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_blocks_pair ON blocks(blocker_id, blocked_id);
+      CREATE INDEX IF NOT EXISTS idx_blocks_blocker ON blocks(blocker_id);
+      CREATE INDEX IF NOT EXISTS idx_blocks_blocked ON blocks(blocked_id);
+    `);
+  } catch (e) {}
   try {
     db.run('ALTER TABLE profiles ADD COLUMN cover_photo TEXT;');
   } catch (e) {
@@ -850,6 +894,60 @@ export class SqlHelper {
         throw err;
       }
     });
+  }
+
+  static async getFollowerCount(userId: string): Promise<number> {
+    const res = await SqlHelper.queryOne<{ count: number }>(
+      'SELECT COUNT(*) as count FROM follows WHERE following_id = ?',
+      [userId]
+    );
+    return Number(res?.count) || 0;
+  }
+
+  static async getFollowingCount(userId: string): Promise<number> {
+    const res = await SqlHelper.queryOne<{ count: number }>(
+      'SELECT COUNT(*) as count FROM follows WHERE follower_id = ?',
+      [userId]
+    );
+    return Number(res?.count) || 0;
+  }
+
+  static async isFollowing(followerId: string, followingId: string): Promise<boolean> {
+    const res = await SqlHelper.queryOne<{ count: number }>(
+      'SELECT COUNT(*) as count FROM follows WHERE follower_id = ? AND following_id = ?',
+      [followerId, followingId]
+    );
+    return (Number(res?.count) || 0) > 0;
+  }
+
+  static async isBlocked(blockerId: string, blockedId: string): Promise<boolean> {
+    const res = await SqlHelper.queryOne<{ count: number }>(
+      'SELECT COUNT(*) as count FROM blocks WHERE blocker_id = ? AND blocked_id = ?',
+      [blockerId, blockedId]
+    );
+    return (Number(res?.count) || 0) > 0;
+  }
+
+  static async followUserSqlite(followerId: string, followingId: string): Promise<{ followersCount: number; followingCount: number }> {
+    const now = new Date().toISOString();
+    const id = `fol_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    await SqlHelper.execute(
+      'INSERT OR IGNORE INTO follows (id, follower_id, following_id, created_at) VALUES (?, ?, ?, ?)',
+      [id, followerId, followingId, now]
+    );
+    const followersCount = await SqlHelper.getFollowerCount(followingId);
+    const followingCount = await SqlHelper.getFollowingCount(followerId);
+    return { followersCount, followingCount };
+  }
+
+  static async unfollowUserSqlite(followerId: string, followingId: string): Promise<{ followersCount: number; followingCount: number }> {
+    await SqlHelper.execute(
+      'DELETE FROM follows WHERE follower_id = ? AND following_id = ?',
+      [followerId, followingId]
+    );
+    const followersCount = await SqlHelper.getFollowerCount(followingId);
+    const followingCount = await SqlHelper.getFollowingCount(followerId);
+    return { followersCount, followingCount };
   }
 }
 

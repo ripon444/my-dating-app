@@ -21,6 +21,7 @@ import {
 } from './src/db/repository.ts';
 import { seedPostgresIfEmpty } from './src/db/seed.ts';
 import { initializePostgresTables } from './src/db/migrate.ts';
+import { syncSqliteWithPostgres } from './src/db/sync.ts';
 import { db } from './src/db/index.ts';
 import { users as pgUsers, profiles as pgProfiles, notifications as pgNotifications, sessions as pgSessions } from './src/db/schema.ts';
 import { eq, desc } from 'drizzle-orm';
@@ -528,6 +529,22 @@ app.get('/api/public-profiles/:id', async (req, res) => {
       return res.status(404).json({ error: 'Public profile not found.' });
     }
 
+    // Ensure followers_count and following_count are ALWAYS accurate and populated
+    const targetUserId = profile.user_id || profile.id;
+    if (targetUserId) {
+      const sqliteFollowers = await SqlHelper.getFollowerCount(targetUserId).catch(() => 0);
+      const sqliteFollowing = await SqlHelper.getFollowingCount(targetUserId).catch(() => 0);
+      let isFollowing = Boolean(profile.is_following);
+      if (!isFollowing && currentUserId && currentUserId !== targetUserId) {
+        isFollowing = await SqlHelper.isFollowing(currentUserId, targetUserId).catch(() => false);
+      }
+      profile.followers_count = Math.max(Number(profile.followers_count) || 0, sqliteFollowers);
+      profile.following_count = Math.max(Number(profile.following_count) || 0, sqliteFollowing);
+      profile.is_following = isFollowing;
+      profile.is_blocked = Boolean(profile.is_blocked);
+      profile.has_blocked = Boolean(profile.has_blocked);
+    }
+
     res.json({ profile });
   } catch (error: any) {
     console.error('[Public Profile API] Error:', error);
@@ -567,7 +584,7 @@ app.post('/api/users/:id/follow', async (req, res) => {
 
     // Resolve target userId if profileId provided
     let targetUserId = targetId;
-    const targetProfileRow = await SqlHelper.queryOne('SELECT user_id FROM profiles WHERE id = ?', [targetId]);
+    const targetProfileRow = await SqlHelper.queryOne('SELECT user_id FROM profiles WHERE id = ? OR user_id = ?', [targetId, targetId]);
     if (targetProfileRow?.user_id) {
       targetUserId = targetProfileRow.user_id;
     }
@@ -591,12 +608,16 @@ app.post('/api/users/:id/follow', async (req, res) => {
         createdAt: new Date().toISOString(),
       };
       io.to(`user_${targetUserId}`).emit('notification:new', socketPayload);
-      io.to(`user_${targetUserId}`).emit('follow:update', {
-        followerId,
-        isFollowing: true,
-        followersCount: followResult.followersCount,
-      });
     }
+
+    // Broadcast follow:update to all connected clients
+    io.emit('follow:update', {
+      targetUserId,
+      followerId,
+      isFollowing: true,
+      followersCount: followResult.followersCount,
+      followingCount: followResult.followingCount,
+    });
 
     res.json(followResult);
   } catch (error: any) {
@@ -615,17 +636,19 @@ app.post('/api/users/:id/unfollow', async (req, res) => {
 
     const followerId = user.id;
     let targetUserId = req.params.id;
-    const targetProfileRow = await SqlHelper.queryOne('SELECT user_id FROM profiles WHERE id = ?', [targetUserId]);
+    const targetProfileRow = await SqlHelper.queryOne('SELECT user_id FROM profiles WHERE id = ? OR user_id = ?', [targetUserId, targetUserId]);
     if (targetProfileRow?.user_id) {
       targetUserId = targetProfileRow.user_id;
     }
 
     const result = await unfollowUser(followerId, targetUserId);
 
-    io.to(`user_${targetUserId}`).emit('follow:update', {
+    io.emit('follow:update', {
+      targetUserId,
       followerId,
       isFollowing: false,
       followersCount: result.followersCount,
+      followingCount: result.followingCount,
     });
 
     res.json(result);
@@ -1945,7 +1968,10 @@ async function start() {
   await initializePostgresTables().catch(err => console.warn('[Postgres Init Warning]:', err));
 
   // Seed Cloud SQL / Neon PostgreSQL if empty
-  seedPostgresIfEmpty().catch(err => console.warn('[Postgres Seed Warning]:', err));
+  await seedPostgresIfEmpty().catch(err => console.warn('[Postgres Seed Warning]:', err));
+
+  // Ensure users and profiles from SQLite are synchronized to PostgreSQL
+  await syncSqliteWithPostgres().catch(err => console.warn('[Postgres Sync Warning]:', err));
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

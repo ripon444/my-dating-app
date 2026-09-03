@@ -75,8 +75,8 @@ export const profiles = pgTable('profiles', {
 // 3. Follows Table (Permanent follow relationships)
 export const follows = pgTable('follows', {
   id: text('id').primaryKey(),
-  followerId: text('follower_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-  followingId: text('following_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  followerId: text('follower_id').notNull(),
+  followingId: text('following_id').notNull(),
   createdAt: timestamp('created_at').defaultNow(),
 }, (table) => [
   uniqueIndex('idx_follows_pair').on(table.followerId, table.followingId),
@@ -87,8 +87,8 @@ export const follows = pgTable('follows', {
 // 4. Blocks Table (User blocking system)
 export const blocks = pgTable('blocks', {
   id: text('id').primaryKey(),
-  blockerId: text('blocker_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
-  blockedId: text('blocked_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  blockerId: text('blocker_id').notNull(),
+  blockedId: text('blocked_id').notNull(),
   reason: text('reason'),
   createdAt: timestamp('created_at').defaultNow(),
 }, (table) => [
@@ -100,7 +100,7 @@ export const blocks = pgTable('blocks', {
 // 5. Notifications Table
 export const notifications = pgTable('notifications', {
   id: text('id').primaryKey(),
-  userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  userId: text('user_id').notNull(),
   type: text('type').notNull(),
   title: text('title').notNull(),
   message: text('message').notNull(),
