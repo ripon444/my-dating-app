@@ -1,8 +1,9 @@
-import { db } from './index.ts';
+import { db, getPool } from './index.ts';
 import { users, profiles, follows, blocks, notifications } from './schema.ts';
 import { eq, and, or, ilike, sql, desc, notInArray } from 'drizzle-orm';
 import { Profile } from '../types/index.ts';
 import { SqlHelper } from '../../server/db.ts';
+import { syncSingleUser } from './sync.ts';
 
 // Helper to format a DB profile row into application Profile object
 export function formatDbProfile(profileRow: any, extra?: { followers_count?: number; following_count?: number; is_following?: boolean; is_blocked?: boolean; has_blocked?: boolean }): Profile {
@@ -173,23 +174,28 @@ export async function getPublicProfileById(targetIdentifier: string, currentUser
     let hasBlocked = false;
 
     if (currentUserId && currentUserId !== targetUserId) {
-      try {
-        const blockRecords = await db.select().from(blocks).where(
-          or(
-            and(eq(blocks.blockerId, currentUserId), eq(blocks.blockedId, targetUserId)),
-            and(eq(blocks.blockerId, targetUserId), eq(blocks.blockedId, currentUserId))
-          )
-        );
-
-        for (const b of blockRecords) {
-          if (b.blockerId === currentUserId) hasBlocked = true;
-          if (b.blockerId === targetUserId) isBlocked = true;
-        }
-      } catch (e) {}
+      hasBlocked = await SqlHelper.isBlocked(currentUserId, targetUserId).catch(() => false);
+      isBlocked = await SqlHelper.isBlocked(targetUserId, currentUserId).catch(() => false);
 
       if (!isBlocked && !hasBlocked) {
-        hasBlocked = await SqlHelper.isBlocked(currentUserId, targetUserId).catch(() => false);
-        isBlocked = await SqlHelper.isBlocked(targetUserId, currentUserId).catch(() => false);
+        const pool = getPool();
+        if (pool) {
+          try {
+            const client = await pool.connect();
+            try {
+              const blockRes = await client.query(
+                'SELECT blocker_id FROM blocks WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1)',
+                [currentUserId, targetUserId]
+              );
+              for (const b of blockRes.rows) {
+                if (b.blocker_id === currentUserId) hasBlocked = true;
+                if (b.blocker_id === targetUserId) isBlocked = true;
+              }
+            } finally {
+              client.release();
+            }
+          } catch (e) {}
+        }
       }
     }
 
@@ -251,27 +257,36 @@ export async function followUser(followerId: string, followingId: string) {
   }
 
   try {
-    // 1. Check if either user has blocked the other
+    // 1. Check if either user has blocked the other in SQLite first
     const isBlockedInSqlite = (await SqlHelper.isBlocked(followerId, followingId).catch(() => false)) ||
                               (await SqlHelper.isBlocked(followingId, followerId).catch(() => false));
     if (isBlockedInSqlite) {
       throw new Error('Cannot follow this user due to block restrictions.');
     }
 
-    try {
-      const blockCheck = await db.select().from(blocks).where(
-        or(
-          and(eq(blocks.blockerId, followerId), eq(blocks.blockedId, followingId)),
-          and(eq(blocks.blockerId, followingId), eq(blocks.blockedId, followerId))
-        )
-      ).limit(1);
-
-      if (blockCheck.length > 0) {
-        throw new Error('Cannot follow this user due to block restrictions.');
+    const pool = getPool();
+    if (pool) {
+      try {
+        const client = await pool.connect();
+        try {
+          const blockRes = await client.query(
+            'SELECT 1 FROM blocks WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1) LIMIT 1',
+            [followerId, followingId]
+          );
+          if (blockRes.rows && blockRes.rows.length > 0) {
+            throw new Error('Cannot follow this user due to block restrictions.');
+          }
+        } finally {
+          client.release();
+        }
+      } catch (e: any) {
+        if (e.message?.includes('block restrictions')) throw e;
       }
-    } catch (e: any) {
-      if (e.message?.includes('block restrictions')) throw e;
     }
+
+    // Ensure both users are synced to Postgres in the background
+    syncSingleUser(followerId).catch(() => {});
+    syncSingleUser(followingId).catch(() => {});
 
     // 2. Persist follow relationship in SQLite
     const sqliteRes = await SqlHelper.followUserSqlite(followerId, followingId);
@@ -280,43 +295,41 @@ export async function followUser(followerId: string, followingId: string) {
     const followId = `fol_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
     let pgFollowers = 0;
     let pgFollowing = 0;
-    try {
-      await db.insert(follows)
-        .values({
-          id: followId,
-          followerId,
-          followingId,
-        })
-        .onConflictDoNothing();
+    if (pool) {
+      try {
+        const client = await pool.connect();
+        try {
+          await client.query(
+            'INSERT INTO follows (id, follower_id, following_id, created_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (follower_id, following_id) DO NOTHING',
+            [followId, followerId, followingId]
+          );
 
-      const followersCountRes = await db.select({ count: sql<number>`count(*)::int` })
-        .from(follows).where(eq(follows.followingId, followingId));
-      pgFollowers = followersCountRes[0]?.count || 0;
+          const followersCountRes = await client.query(
+            'SELECT count(*)::int as count FROM follows WHERE following_id = $1',
+            [followingId]
+          );
+          pgFollowers = followersCountRes.rows[0]?.count || 0;
 
-      const followingCountRes = await db.select({ count: sql<number>`count(*)::int` })
-        .from(follows).where(eq(follows.followerId, followingId));
-      pgFollowing = followingCountRes[0]?.count || 0;
-    } catch (e: any) {
-      console.warn('[Postgres follow write notice]:', e?.message || e);
+          const followingCountRes = await client.query(
+            'SELECT count(*)::int as count FROM follows WHERE follower_id = $1',
+            [followingId]
+          );
+          pgFollowing = followingCountRes.rows[0]?.count || 0;
+        } finally {
+          client.release();
+        }
+      } catch (e: any) {
+        console.warn('[Postgres follow write notice]:', e?.message || e);
+      }
     }
 
     // 4. Resolve follower name for notification
     let followerName = 'Someone';
     let followerPhoto: string | null = null;
-    try {
-      const followerProfileRes = await db.select().from(profiles).where(eq(profiles.userId, followerId)).limit(1);
-      if (followerProfileRes[0]?.name) {
-        followerName = followerProfileRes[0].name;
-        followerPhoto = followerProfileRes[0].photosJson ? JSON.parse(followerProfileRes[0].photosJson)[0] : null;
-      }
-    } catch {}
-
-    if (followerName === 'Someone') {
-      const sqliteProfile = await SqlHelper.queryOne<any>('SELECT name, photos_json FROM profiles WHERE user_id = ?', [followerId]).catch(() => null);
-      if (sqliteProfile?.name) {
-        followerName = sqliteProfile.name;
-        followerPhoto = sqliteProfile.photos_json ? JSON.parse(sqliteProfile.photos_json)[0] : null;
-      }
+    const sqliteProfile = await SqlHelper.queryOne<any>('SELECT name, photos_json FROM profiles WHERE user_id = ?', [followerId]).catch(() => null);
+    if (sqliteProfile?.name) {
+      followerName = sqliteProfile.name;
+      followerPhoto = sqliteProfile.photos_json ? JSON.parse(sqliteProfile.photos_json)[0] : null;
     }
 
     // 5. Create notification for target user in SQLite & Postgres
@@ -333,17 +346,19 @@ export async function followUser(followerId: string, followingId: string) {
       [notifId, followingId, 'follow', 'New Follower! 👤', `${followerName} started following your profile.`, dataJson, now]
     ).catch(() => {});
 
-    try {
-      await db.insert(notifications).values({
-        id: notifId,
-        userId: followingId,
-        type: 'follow',
-        title: 'New Follower! 👤',
-        message: `${followerName} started following your profile.`,
-        dataJson,
-        isRead: 0,
-      });
-    } catch {}
+    if (pool) {
+      try {
+        const client = await pool.connect();
+        try {
+          await client.query(
+            'INSERT INTO notifications (id, user_id, type, title, message, data_json, is_read, created_at) VALUES ($1, $2, $3, $4, $5, $6, 0, NOW())',
+            [notifId, followingId, 'follow', 'New Follower! 👤', `${followerName} started following your profile.`, dataJson]
+          );
+        } finally {
+          client.release();
+        }
+      } catch {}
+    }
 
     const followersCount = Math.max(pgFollowers, sqliteRes.followersCount, 1);
     const followingCount = Math.max(pgFollowing, sqliteRes.followingCount, 0);
@@ -378,20 +393,33 @@ export async function unfollowUser(followerId: string, followingId: string) {
 
     let pgFollowers = 0;
     let pgFollowing = 0;
-    try {
-      await db.delete(follows).where(
-        and(eq(follows.followerId, followerId), eq(follows.followingId, followingId))
-      );
+    const pool = getPool();
+    if (pool) {
+      try {
+        const client = await pool.connect();
+        try {
+          await client.query(
+            'DELETE FROM follows WHERE follower_id = $1 AND following_id = $2',
+            [followerId, followingId]
+          );
 
-      const followersCountRes = await db.select({ count: sql<number>`count(*)::int` })
-        .from(follows).where(eq(follows.followingId, followingId));
-      pgFollowers = followersCountRes[0]?.count || 0;
+          const followersCountRes = await client.query(
+            'SELECT count(*)::int as count FROM follows WHERE following_id = $1',
+            [followingId]
+          );
+          pgFollowers = followersCountRes.rows[0]?.count || 0;
 
-      const followingCountRes = await db.select({ count: sql<number>`count(*)::int` })
-        .from(follows).where(eq(follows.followerId, followingId));
-      pgFollowing = followingCountRes[0]?.count || 0;
-    } catch (e: any) {
-      console.warn('[Postgres unfollow notice]:', e?.message || e);
+          const followingCountRes = await client.query(
+            'SELECT count(*)::int as count FROM follows WHERE follower_id = $1',
+            [followingId]
+          );
+          pgFollowing = followingCountRes.rows[0]?.count || 0;
+        } finally {
+          client.release();
+        }
+      } catch (e: any) {
+        console.warn('[Postgres unfollow notice]:', e?.message || e);
+      }
     }
 
     return {

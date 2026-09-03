@@ -18,8 +18,10 @@ export const createPool = () => {
         ssl: databaseUrl.includes('sslmode=require') || databaseUrl.includes('neon.tech') || databaseUrl.includes('ssl=true')
           ? { rejectUnauthorized: false }
           : false,
-        max: 10,
-        connectionTimeoutMillis: 15000,
+        max: 5,
+        idleTimeoutMillis: 10000,
+        connectionTimeoutMillis: 10000,
+        keepAlive: true,
       });
     } else {
       global._postgresPool = new Pool({
@@ -27,8 +29,10 @@ export const createPool = () => {
         user: process.env.SQL_USER || 'postgres',
         password: process.env.SQL_PASSWORD || 'postgres',
         database: process.env.SQL_DB_NAME || 'dating_app',
-        max: 10,
-        connectionTimeoutMillis: 15000,
+        max: 5,
+        idleTimeoutMillis: 10000,
+        connectionTimeoutMillis: 10000,
+        keepAlive: true,
       });
     }
 

@@ -21,7 +21,7 @@ import {
 } from './src/db/repository.ts';
 import { seedPostgresIfEmpty } from './src/db/seed.ts';
 import { initializePostgresTables } from './src/db/migrate.ts';
-import { syncSqliteWithPostgres } from './src/db/sync.ts';
+import { syncSqliteWithPostgres, syncSingleUser } from './src/db/sync.ts';
 import { db } from './src/db/index.ts';
 import { users as pgUsers, profiles as pgProfiles, notifications as pgNotifications, sessions as pgSessions } from './src/db/schema.ts';
 import { eq, desc } from 'drizzle-orm';
@@ -425,6 +425,9 @@ app.post('/api/auth/register', async (req, res) => {
     );
 
     console.log(`[SQL Database] Registered new user into SQLite: ${cleanEmail} (ID: ${newUserId}, Profile ID: ${newProfileId}, Username: @${uniqueUsername})`);
+
+    // Synchronize newly created user & profile into PostgreSQL
+    syncSingleUser(newUserId).catch((e) => console.warn('[Postgres Single User Sync Notice]:', e));
 
     // REQUIREMENT: DO NOT auto-login. Prompt user to manually log in.
     res.json({
